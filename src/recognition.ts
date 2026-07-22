@@ -1,6 +1,21 @@
 namespace ICPDrawingLab {
   const TESSERACT_MODULE_URL = `https://cdn.jsdelivr.net/npm/tesseract.js@${TESSERACT_VERSION}/dist/tesseract.esm.min.js`;
 
+  interface TesseractModuleNamespace {
+    createWorker?: TesseractModule["createWorker"];
+    default?: TesseractModule;
+  }
+
+  function resolveTesseractModule(module: TesseractModuleNamespace): TesseractModule {
+    if (typeof module.createWorker === "function") {
+      return module as TesseractModule;
+    }
+    if (module.default && typeof module.default.createWorker === "function") {
+      return module.default;
+    }
+    throw new Error("The OCR library loaded, but its createWorker API was not available.");
+  }
+
   interface TextRun {
     text: string;
     box: BoundingBox;
@@ -132,7 +147,8 @@ namespace ICPDrawingLab {
     roomPattern: string,
     onProgress: (progress: OcrProgress) => void,
   ): Promise<DetectedLabel[]> {
-    const tesseract = await dynamicImport<TesseractModule>(TESSERACT_MODULE_URL);
+    const importedModule = await dynamicImport<TesseractModuleNamespace>(TESSERACT_MODULE_URL);
+    const tesseract = resolveTesseractModule(importedModule);
     const worker = await tesseract.createWorker("eng", 1, {
       logger: (message) => onProgress({
         status: String(message.status ?? "OCR processing"),
