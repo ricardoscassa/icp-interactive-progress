@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "none",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "outFile": "build/tests.js",
+    "noEmitOnError": true
+  },
+  "files": [
+    "src/types.ts",
+    "src/utils.ts",
+    "src/geometry.ts",
+    "src/matching.ts",
+    "tests/geometry.test.ts"
+  ]
+}

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#201006" />
+  <meta name="description" content="Standalone TypeScript prototype for uploading construction drawings, recognizing room labels, suggesting room boundaries, and manually editing room polygons." />
+  <title>ICP Drawing Recognition Lab</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand-lockup">
+      <div class="brand-mark" aria-hidden="true">ICP</div>
+      <div>
+        <span class="eyebrow">Interactive Progress experiment</span>
+        <h1>Drawing Recognition Lab</h1>
+      </div>
+    </div>
+    <label class="project-name-field">
+      <span>Test project</span>
+      <input id="projectName" value="ICP Drawing Recognition Test" />
+    </label>
+    <div class="header-actions">
+      <button id="loadProjectButton" class="button">Load JSON</button>
+      <button id="saveProjectButton" class="button primary">Save JSON</button>
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <aside class="left-panel">
+      <section class="panel-section upload-section">
+        <span class="section-kicker">1 · Drawing</span>
+        <h2>Load a plan</h2>
+        <p>PDF, PNG, JPG, WebP or sanitised SVG. Multi-page PDFs become separate tabs.</p>
+        <div class="stacked-actions">
+          <button id="uploadPlanButton" class="button primary full-width">Upload drawing</button>
+          <button id="loadSampleButton" class="button full-width">Reload sample</button>
+        </div>
+        <input id="planFileInput" type="file" accept="application/pdf,image/png,image/jpeg,image/webp,image/svg+xml,.pdf,.png,.jpg,.jpeg,.webp,.svg" multiple hidden />
+        <input id="projectFileInput" type="file" accept="application/json,.json" hidden />
+      </section>
+
+      <section class="panel-section recognition-section">
+        <span class="section-kicker">2 · Recognition</span>
+        <h2>Find room labels</h2>
+        <label class="field compact">
+          <span>Room label pattern</span>
+          <input id="roomPattern" spellcheck="false" />
+          <small>PDF/SVG text is checked first. Images and scanned PDFs use OCR.</small>
+        </label>
+        <label class="check-row"><input id="forceOcr" type="checkbox" /> <span>Force OCR even when text exists</span></label>
+        <label class="check-row"><input id="createBoundaries" type="checkbox" checked /> <span>Suggest rectangular wall boundaries</span></label>
+        <label class="field compact">
+          <span>Wall darkness threshold</span>
+          <input id="darkThreshold" type="range" min="80" max="220" value="155" />
+        </label>
+        <button id="analyseButton" class="button accent full-width">Recognize &amp; suggest rooms</button>
+        <progress id="analysisProgress" max="1" value="0" hidden></progress>
+        <button id="clearAutomaticButton" class="text-button">Clear automatic suggestions</button>
+      </section>
+
+      <section class="panel-section summary-section">
+        <span class="section-kicker">Current page</span>
+        <div id="analysisSummary" class="analysis-summary"><span>No drawing loaded</span></div>
+      </section>
+
+      <section class="panel-section room-list-section">
+        <div class="section-heading-row">
+          <div><span class="section-kicker">3 · Review</span><h2>Rooms and labels</h2></div>
+        </div>
+        <div id="roomList" class="room-list"></div>
+      </section>
+    </aside>
+
+    <section class="workspace">
+      <div class="page-tabs-bar">
+        <div id="pageTabs" class="page-tabs"></div>
+      </div>
+
+      <div class="toolbar" role="toolbar" aria-label="Drawing editor tools">
+        <div class="tool-group">
+          <button class="tool-button is-active" data-editor-tool="select" title="Select and move room (V)">Select</button>
+          <button class="tool-button" data-editor-tool="draw" title="Draw polygon (D)">Draw room</button>
+          <button class="tool-button" data-editor-tool="add-vertex" title="Add a vertex (A)">Add point</button>
+          <button class="tool-button" data-editor-tool="delete-vertex" title="Delete a selected vertex (X)">Delete point</button>
+          <button class="tool-button" data-editor-tool="pan" title="Pan drawing (H)">Pan</button>
+        </div>
+        <div class="draft-controls">
+          <input id="draftRoomLabel" placeholder="Room label" aria-label="New room label" />
+          <button id="finishDraftButton" class="tool-button confirm" disabled>Finish</button>
+          <button id="cancelDraftButton" class="tool-button" disabled>Cancel</button>
+        </div>
+        <div class="tool-group align-right">
+          <button id="undoButton" class="tool-button" title="Undo">Undo</button>
+          <button id="redoButton" class="tool-button" title="Redo">Redo</button>
+          <button id="zoomOutButton" class="tool-button" title="Zoom out">−</button>
+          <span id="zoomOutput" class="zoom-output">100%</span>
+          <button id="zoomInButton" class="tool-button" title="Zoom in">+</button>
+          <button id="fitButton" class="tool-button" title="Fit drawing">Fit</button>
+        </div>
+      </div>
+
+      <div id="stageViewport" class="stage-viewport">
+        <div id="emptyStage" class="empty-stage">
+          <div class="empty-illustration" aria-hidden="true"></div>
+          <h2>Upload a drawing</h2>
+          <p>Room labels and polygons will appear here.</p>
+        </div>
+        <div id="stageSurface" class="stage-surface" hidden>
+          <canvas id="drawingCanvas"></canvas>
+          <svg id="drawingOverlay" xmlns="http://www.w3.org/2000/svg" aria-label="Room geometry overlay"></svg>
+        </div>
+      </div>
+
+      <footer class="status-bar">
+        <span id="statusMessage" data-tone="normal">Preparing sample drawing…</span>
+        <span class="shortcut-hint">V select · D draw · A add · X delete · H pan · wheel zoom</span>
+      </footer>
+    </section>
+
+    <aside class="right-panel">
+      <section class="panel-section inspector-section">
+        <span class="section-kicker">4 · Final decision</span>
+        <h2>Room inspector</h2>
+        <div id="inspectorContent"></div>
+      </section>
+      <section class="panel-section guidance-section">
+        <h3>Test objective</h3>
+        <ol>
+          <li>Upload a real drawing.</li>
+          <li>Run recognition.</li>
+          <li>Review every suggestion.</li>
+          <li>Move vertices or redraw incorrect rooms.</li>
+          <li>Accept the fake database link.</li>
+          <li>Save and reload the JSON.</li>
+        </ol>
+        <p class="privacy-note">Files stay in the browser. OCR assets are downloaded from jsDelivr when OCR is used.</p>
+      </section>
+    </aside>
+  </main>
+
+  <script src="./app.js" defer></script>
+</body>
+</html>

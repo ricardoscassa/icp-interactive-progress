@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" width="1400" height="900">
+  <rect width="1400" height="900" fill="#fafafa"/>
+  <g stroke="#232323" stroke-width="8" fill="none" stroke-linejoin="round">
+    <path d="M80 80 H470 V330 H80 Z"/>
+    <path d="M470 80 H860 V330 H470 Z"/>
+    <path d="M860 80 H1320 V330 H860 Z"/>
+    <path d="M80 330 H350 V760 H80 Z"/>
+    <path d="M350 330 H720 V530 H590 V760 H350 Z"/>
+    <path d="M720 330 H1040 V760 H590 V530 H720 Z"/>
+    <path d="M1040 330 H1320 V760 H1040 Z"/>
+    <path d="M80 760 H1320"/>
+  </g>
+  <g stroke="#fafafa" stroke-width="18">
+    <line x1="215" y1="330" x2="275" y2="330"/>
+    <line x1="615" y1="330" x2="675" y2="330"/>
+    <line x1="1075" y1="330" x2="1135" y2="330"/>
+    <line x1="350" y1="560" x2="350" y2="625"/>
+    <line x1="1040" y1="515" x2="1040" y2="580"/>
+  </g>
+  <g fill="#202020" font-family="Arial, sans-serif" font-size="28" font-weight="700" text-anchor="middle">
+    <text x="275" y="205">101</text>
+    <text x="665" y="205">102</text>
+    <text x="1090" y="205">103</text>
+    <text x="215" y="545">104</text>
+    <text x="500" y="455">105</text>
+    <text x="820" y="560">106</text>
+    <text x="1180" y="545">107</text>
+  </g>
+  <g fill="#6c6c6c" font-family="Arial, sans-serif" font-size="16" text-anchor="middle">
+    <text x="275" y="236">Electrical Switch Room</text>
+    <text x="665" y="236">Control Equipment Room</text>
+    <text x="1090" y="236">Mechanical Services Room</text>
+    <text x="215" y="576">Cable Transit Room</text>
+    <text x="500" y="486">Valve Gallery</text>
+    <text x="820" y="591">Instrumentation Room</text>
+    <text x="1180" y="576">Access Lobby</text>
+  </g>
+  <g fill="#f36c21">
+    <circle cx="45" cy="45" r="18"/>
+  </g>
+  <text x="80" y="855" font-family="Arial, sans-serif" font-size="18" fill="#5c5c5c">ICP Drawing Recognition Lab · sample plan intentionally includes door gaps and irregular rooms</text>
+</svg>

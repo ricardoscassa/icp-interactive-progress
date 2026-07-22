@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "none",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": false,
+    "useUnknownInCatchVariables": true,
+    "outFile": "docs/app.js",
+    "removeComments": false,
+    "sourceMap": true,
+    "noEmitOnError": true
+  },
+  "files": [
+    "src/types.ts",
+    "src/utils.ts",
+    "src/geometry.ts",
+    "src/matching.ts",
+    "src/recognition.ts",
+    "src/file-loader.ts",
+    "src/store.ts",
+    "src/renderer.ts",
+    "src/app.ts"
+  ]
+}
