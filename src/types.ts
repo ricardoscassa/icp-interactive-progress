@@ -16,8 +16,21 @@ namespace ICPDrawingLab {
     height: number;
   }
 
+  export interface PdfLayerInfo {
+    id: string;
+    name: string;
+    visibleByDefault: boolean;
+  }
+
+  export interface VectorRegion {
+    id: string;
+    points: Point[];
+    pixelArea: number;
+    confidence: number;
+  }
+
   export type LabelSource = "pdf-text" | "svg-text" | "ocr" | "manual";
-  export type ShapeSource = "automatic" | "manual";
+  export type ShapeSource = "automatic" | "manual" | "pdf-vector";
   export type ReviewStatus = "unreviewed" | "accepted" | "rejected" | "manual" | "ignored";
   export type EditorTool = "select" | "draw" | "add-vertex" | "delete-vertex" | "pan" | "analysis-area";
 
@@ -68,6 +81,11 @@ namespace ICPDrawingLab {
     labels: DetectedLabel[];
     rooms: RoomShape[];
     analysisArea: BoundingBox | null;
+    pdfSourceKey: string | null;
+    pdfPageNumber: number | null;
+    pdfLayers: PdfLayerInfo[];
+    selectedAreaLayerIds: string[];
+    selectedLabelLayerIds: string[];
   }
 
   export interface DrawingProject {
@@ -91,6 +109,7 @@ namespace ICPDrawingLab {
     forceOcr: boolean;
     createBoundarySuggestions: boolean;
     darkThreshold: number;
+    usePdfLayers: boolean;
   }
 
   export interface OcrProgress {
@@ -104,6 +123,8 @@ namespace ICPDrawingLab {
     boundariesFailed: number;
     exactMatches: number;
     fuzzyMatches: number;
+    vectorRegionsFound: number;
+    vectorRoomsSuggested: number;
   }
 
   export interface PdfTextItemLike {
@@ -111,6 +132,7 @@ namespace ICPDrawingLab {
     transform?: number[];
     width?: number;
     height?: number;
+    hasEOL?: boolean;
   }
 
   export interface PdfTextContentLike {
@@ -123,19 +145,31 @@ namespace ICPDrawingLab {
     transform: number[];
   }
 
+  export interface PdfOptionalContentGroupLike {
+    name?: string;
+    visible?: boolean;
+  }
+
+  export interface PdfOptionalContentConfigLike {
+    getGroups?(): Record<string, PdfOptionalContentGroupLike> | null;
+    setVisibility?(id: string, visible: boolean, preserveRB?: boolean): void;
+  }
+
   export interface PdfPageLike {
     getViewport(options: { scale: number }): PdfViewportLike;
     render(options: {
       canvasContext: CanvasRenderingContext2D;
       viewport: PdfViewportLike;
       background?: string;
+      optionalContentConfigPromise?: Promise<PdfOptionalContentConfigLike>;
     }): { promise: Promise<void> };
-    getTextContent(): Promise<PdfTextContentLike>;
+    getTextContent(options?: { includeMarkedContent?: boolean }): Promise<PdfTextContentLike>;
   }
 
   export interface PdfDocumentLike {
     numPages: number;
     getPage(pageNumber: number): Promise<PdfPageLike>;
+    getOptionalContentConfig?(options?: { intent?: string }): Promise<PdfOptionalContentConfigLike>;
     destroy?(): Promise<void>;
   }
 
