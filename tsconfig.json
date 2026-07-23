@@ -14,10 +14,12 @@
   },
   "files": [
     "src/types.ts",
+    "src/pdf-layer-preview-types.ts",
     "src/utils.ts",
     "src/geometry.ts",
     "src/matching.ts",
     "src/pdf-layer-recognition.ts",
+    "src/pdf-layer-preview.ts",
     "src/colour-region-recognition.ts",
     "src/recognition.ts",
     "src/file-loader.ts",
