@@ -21,6 +21,7 @@
     "src/file-loader.ts",
     "src/store.ts",
     "src/renderer.ts",
-    "src/app.ts"
+    "src/app.ts",
+    "src/stage-interaction.ts"
   ]
 }
