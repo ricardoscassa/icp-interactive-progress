@@ -57,6 +57,10 @@
           <input id="darkThreshold" type="range" min="80" max="220" value="155" />
         </label>
         <button id="analyseButton" class="button accent full-width">Recognize &amp; suggest rooms</button>
+        <div class="stacked-actions compact-actions">
+          <button id="selectAnalysisAreaButton" class="button full-width" type="button">Select recognition area</button>
+          <button id="clearAnalysisAreaButton" class="button full-width" type="button">Clear recognition area</button>
+        </div>
         <progress id="analysisProgress" max="1" value="0" hidden></progress>
         <button id="clearAutomaticButton" class="text-button">Clear automatic suggestions</button>
       </section>
@@ -116,7 +120,7 @@
 
       <footer class="status-bar">
         <span id="statusMessage" data-tone="normal">Preparing sample drawing…</span>
-        <span class="shortcut-hint">V select · D draw · A add · X delete · H pan · wheel zoom</span>
+        <span class="shortcut-hint">V select · D draw · A add · X delete · H pan · R area · wheel zoom</span>
       </footer>
     </section>
 
@@ -130,13 +134,14 @@
         <h3>Test objective</h3>
         <ol>
           <li>Upload a real drawing.</li>
+          <li>Optionally select a recognition area.</li>
           <li>Run recognition.</li>
           <li>Review every suggestion.</li>
           <li>Move vertices or redraw incorrect rooms.</li>
           <li>Accept the fake database link.</li>
           <li>Save and reload the JSON.</li>
         </ol>
-        <p class="privacy-note">Files stay in the browser. OCR assets are downloaded from jsDelivr when OCR is used.</p>
+        <p class="privacy-note">Files stay in the browser. OCR assets are downloaded from jsDelivr when OCR is used. Tip: define a recognition area to ignore title blocks, notes or dimensions.</p>
       </section>
     </aside>
   </main>

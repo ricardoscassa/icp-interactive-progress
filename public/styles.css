@@ -68,6 +68,7 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .panel-section h3 { margin: 0 0 10px; font-size: 15px; }
 .panel-section p { margin: 0 0 14px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .stacked-actions { display: grid; gap: 8px; }
+.compact-actions { margin-top: 8px; }
 
 .button, .tool-button {
   border: 1px solid #cfc6bf; background: white; color: var(--ink); border-radius: 9px; padding: 9px 12px;
@@ -96,6 +97,7 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 progress { width: 100%; height: 7px; margin-top: 10px; accent-color: var(--accent); }
 
 .analysis-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
+.analysis-summary > div:last-child { grid-column: 1 / -1; }
 .analysis-summary > div { background: var(--soft); border: 1px solid #e5ddd7; border-radius: 9px; padding: 9px; display: flex; align-items: baseline; gap: 6px; }
 .analysis-summary strong { font-size: 18px; }
 .analysis-summary span { color: var(--muted); font-size: 10px; }
@@ -161,7 +163,9 @@ progress { width: 100%; height: 7px; margin-top: 10px; accent-color: var(--accen
 .label-marker.is-selected circle { fill: #ffdc9a; stroke: var(--accent); }
 .draft-room polyline { fill: rgba(50,105,168,.18); stroke: var(--blue); stroke-width: 3; stroke-dasharray: 7 5; vector-effect: non-scaling-stroke; }
 .draft-handle { fill: white; stroke: var(--blue); stroke-width: 3; vector-effect: non-scaling-stroke; }
-body.is-drawing #drawingOverlay { cursor: crosshair; }
+.analysis-area-rect { fill: rgba(243,108,33,.12); stroke: var(--accent); stroke-width: 3; stroke-dasharray: 10 6; vector-effect: non-scaling-stroke; }
+.analysis-area-label { fill: var(--accent-strong); font-size: 14px; font-weight: 800; paint-order: stroke; stroke: rgba(255,255,255,.95); stroke-width: 5px; }
+body.is-drawing #drawingOverlay, body.is-selecting-area #drawingOverlay { cursor: crosshair; }
 
 .status-bar { min-height: 34px; background: white; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; padding: 7px 12px; gap: 10px; font-size: 10px; }
 #statusMessage[data-tone="success"] { color: var(--success); }

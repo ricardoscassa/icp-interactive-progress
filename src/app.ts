@@ -24,6 +24,14 @@ namespace ICPDrawingLab {
       this.planInput.addEventListener("change", () => void this.handlePlanFiles());
       assertElement<HTMLButtonElement>("#loadSampleButton").addEventListener("click", () => void this.loadSample());
       this.analyseButton.addEventListener("click", () => void this.analyseActivePage());
+      assertElement<HTMLButtonElement>("#selectAnalysisAreaButton").addEventListener("click", () => {
+        this.store.setTool(this.store.tool === "analysis-area" ? "select" : "analysis-area");
+        setStatus(this.store.tool === "analysis-area" ? "Drag over the drawing to define the recognition area." : "Area selection cancelled.");
+      });
+      assertElement<HTMLButtonElement>("#clearAnalysisAreaButton").addEventListener("click", () => {
+        this.store.clearAnalysisArea();
+        setStatus("Recognition area cleared. The whole page will be analysed.", "success");
+      });
       assertElement<HTMLButtonElement>("#clearAutomaticButton").addEventListener("click", () => this.clearAutomaticSuggestions());
       assertElement<HTMLButtonElement>("#saveProjectButton").addEventListener("click", () => this.saveProject());
       assertElement<HTMLButtonElement>("#loadProjectButton").addEventListener("click", () => this.projectInput.click());
@@ -131,8 +139,9 @@ namespace ICPDrawingLab {
           if (progress !== undefined) this.analysisProgress.value = progress;
         });
         this.store.commitTransaction(before);
+        const areaMessage = page.analysisArea ? " inside the selected area" : "";
         setStatus(
-          `Recognition complete: ${summary.labelsFound} labels, ${summary.roomsSuggested} boundary suggestions, ${summary.boundariesFailed} labels without a box.`,
+          `Recognition complete${areaMessage}: ${summary.labelsFound} labels, ${summary.roomsSuggested} boundary suggestions, ${summary.boundariesFailed} labels without a box.`,
           summary.boundariesFailed ? "warning" : "success",
         );
       } catch (error) {
@@ -221,6 +230,7 @@ namespace ICPDrawingLab {
         a: "add-vertex",
         x: "delete-vertex",
         h: "pan",
+        r: "analysis-area",
       };
       const tool = shortcuts[event.key.toLowerCase()];
       if (tool) this.store.setTool(tool);
@@ -230,6 +240,8 @@ namespace ICPDrawingLab {
       this.analyseButton.disabled = busy;
       assertElement<HTMLButtonElement>("#uploadPlanButton").disabled = busy;
       assertElement<HTMLButtonElement>("#loadSampleButton").disabled = busy;
+      assertElement<HTMLButtonElement>("#selectAnalysisAreaButton").disabled = busy;
+      assertElement<HTMLButtonElement>("#clearAnalysisAreaButton").disabled = busy;
       document.body.classList.toggle("is-busy", busy);
     }
   }

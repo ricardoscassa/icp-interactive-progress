@@ -104,6 +104,22 @@ namespace ICPDrawingLab {
       this.notify();
     }
 
+    setAnalysisArea(area: BoundingBox | null): void {
+      const page = this.activePage;
+      if (!page) return;
+      this.pushHistory();
+      page.analysisArea = area ? deepClone(area) : null;
+      this.notify();
+    }
+
+    clearAnalysisArea(): void {
+      const page = this.activePage;
+      if (!page?.analysisArea) return;
+      this.pushHistory();
+      page.analysisArea = null;
+      this.notify();
+    }
+
     cancelDraft(): void {
       this.draftPoints = [];
       this.draftLabel = "";
@@ -284,6 +300,8 @@ namespace ICPDrawingLab {
       if (!page || typeof page !== "object" || !Array.isArray(page.rooms) || !Array.isArray(page.labels)) {
         throw new Error("A drawing page in the project is invalid.");
       }
+      const pageWithArea = page as unknown as { analysisArea?: BoundingBox | null };
+      if (pageWithArea.analysisArea === undefined) pageWithArea.analysisArea = null;
       for (const room of page.rooms) {
         if (!Array.isArray(room.points) || room.points.length < 3) {
           throw new Error(`Room ${String(room.displayLabel ?? room.id)} has invalid geometry.`);

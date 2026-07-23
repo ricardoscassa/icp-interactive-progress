@@ -93,6 +93,7 @@ namespace ICPDrawingLab {
           imageDataUrl: canvas.toDataURL("image/png"),
           labels,
           rooms: [],
+          analysisArea: null,
         });
       }
     } finally {
@@ -178,6 +179,7 @@ namespace ICPDrawingLab {
           rasterized.height,
         ),
         rooms: [],
+        analysisArea: null,
       }];
     }
 
@@ -192,6 +194,7 @@ namespace ICPDrawingLab {
       imageDataUrl: rasterized.dataUrl,
       labels: [],
       rooms: [],
+      analysisArea: null,
     }];
   }
 
@@ -237,6 +240,7 @@ namespace ICPDrawingLab {
         rasterized.height,
       ),
       rooms: [],
+      analysisArea: null,
     };
   }
 }

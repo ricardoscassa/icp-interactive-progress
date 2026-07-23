@@ -296,4 +296,14 @@ namespace ICPDrawingLab {
       ],
     };
   }
+  export function boundingBoxCenterInsideArea(box: BoundingBox, area: BoundingBox | null): boolean {
+    if (!area) return true;
+    const centerX = box.x + box.width / 2;
+    const centerY = box.y + box.height / 2;
+    return centerX >= area.x
+      && centerX <= area.x + area.width
+      && centerY >= area.y
+      && centerY <= area.y + area.height;
+  }
+
 }

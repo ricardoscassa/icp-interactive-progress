@@ -19,6 +19,11 @@ namespace ICPDrawingLab {
       clientY: number;
       originalX: number;
       originalY: number;
+    }
+    | {
+      type: "analysis-area";
+      start: Point;
+      current: Point;
     };
 
   export class DrawingRenderer {
@@ -31,6 +36,8 @@ namespace ICPDrawingLab {
     private readonly inspector = assertElement<HTMLElement>("#inspectorContent");
     private readonly analysisSummary = assertElement<HTMLElement>("#analysisSummary");
     private readonly emptyState = assertElement<HTMLElement>("#emptyStage");
+    private readonly selectAnalysisAreaButton = assertElement<HTMLButtonElement>("#selectAnalysisAreaButton");
+    private readonly clearAnalysisAreaButton = assertElement<HTMLButtonElement>("#clearAnalysisAreaButton");
     private readonly draftLabelInput = assertElement<HTMLInputElement>("#draftRoomLabel");
     private readonly finishDraftButton = assertElement<HTMLButtonElement>("#finishDraftButton");
     private readonly cancelDraftButton = assertElement<HTMLButtonElement>("#cancelDraftButton");
@@ -103,6 +110,35 @@ namespace ICPDrawingLab {
       context.drawImage(image, 0, 0, page.width, page.height);
     }
 
+    private activeAnalysisArea(page: DrawingPage): BoundingBox | null {
+      if (this.drag?.type === "analysis-area") {
+        return this.boundingBoxFromPoints(this.drag.start, this.drag.current, page);
+      }
+      return page.analysisArea ?? null;
+    }
+
+    private boundingBoxFromPoints(start: Point, end: Point, page: DrawingPage): BoundingBox {
+      const left = clamp(Math.min(start.x, end.x), 0, 1);
+      const top = clamp(Math.min(start.y, end.y), 0, 1);
+      const right = clamp(Math.max(start.x, end.x), 0, 1);
+      const bottom = clamp(Math.max(start.y, end.y), 0, 1);
+      return {
+        x: round(left * page.width),
+        y: round(top * page.height),
+        width: round((right - left) * page.width),
+        height: round((bottom - top) * page.height),
+      };
+    }
+
+    private analysisAreaSvg(area: BoundingBox | null): string {
+      if (!area || area.width < 4 || area.height < 4) return "";
+      return `
+        <g class="analysis-area-layer">
+          <rect class="analysis-area-rect" x="${area.x}" y="${area.y}" width="${area.width}" height="${area.height}" rx="6" />
+          <text class="analysis-area-label" x="${area.x + 10}" y="${Math.max(18, area.y - 10)}">Recognition area</text>
+        </g>`;
+    }
+
     private renderStageGeometry(): void {
       const page = this.store.activePage;
       const hasPage = Boolean(page);
@@ -122,11 +158,12 @@ namespace ICPDrawingLab {
 
       const rooms = page.rooms.map((room) => this.roomSvg(room, page)).join("");
       const labels = page.labels
-        .filter((label) => !label.consumedByRoomId)
+        .filter((label) => !label.consumedByRoomId && boundingBoxCenterInsideArea(label.box, page.analysisArea ?? null))
         .map((label) => this.labelSvg(label))
         .join("");
       const draft = this.draftSvg(page);
-      this.overlay.innerHTML = `${rooms}${labels}${draft}`;
+      const analysisArea = this.analysisAreaSvg(this.activeAnalysisArea(page));
+      this.overlay.innerHTML = `${rooms}${labels}${draft}${analysisArea}`;
     }
 
     private roomSvg(room: RoomShape, page: DrawingPage): string {
@@ -187,8 +224,12 @@ namespace ICPDrawingLab {
       });
       this.undoButton.disabled = !this.store.canUndo();
       this.redoButton.disabled = !this.store.canRedo();
+      const selectingArea = this.store.tool === "analysis-area";
+      this.selectAnalysisAreaButton.classList.toggle("is-active", selectingArea);
+      this.clearAnalysisAreaButton.disabled = !this.store.activePage?.analysisArea;
       const drawing = this.store.tool === "draw";
       document.body.classList.toggle("is-drawing", drawing);
+      document.body.classList.toggle("is-selecting-area", selectingArea);
       this.finishDraftButton.disabled = this.store.draftPoints.length < 3;
       this.cancelDraftButton.disabled = this.store.draftPoints.length === 0;
       if (document.activeElement !== this.draftLabelInput) this.draftLabelInput.value = this.store.draftLabel;
@@ -216,7 +257,7 @@ namespace ICPDrawingLab {
           <span class="review-pill" data-status="${room.reviewStatus}">${escapeHtml(status)}</span>
         </button>`;
       }).join("");
-      const unmatchedRows = page.labels.filter((label) => !label.consumedByRoomId).map((label) => `
+      const unmatchedRows = page.labels.filter((label) => !label.consumedByRoomId && boundingBoxCenterInsideArea(label.box, page.analysisArea ?? null)).map((label) => `
         <button type="button" class="room-list-row label-row ${label.id === this.store.selectedLabelId ? "is-active" : ""}" data-select-label="${label.id}">
           <span class="room-list-main"><strong>${escapeHtml(label.roomCode)}</strong><small>${escapeHtml(label.source)} · no boundary</small></span>
           <span class="review-pill" data-status="unreviewed">label</span>
@@ -283,12 +324,16 @@ namespace ICPDrawingLab {
       }
       const accepted = page.rooms.filter((room) => room.reviewStatus === "accepted" || room.reviewStatus === "manual").length;
       const review = page.rooms.filter((room) => room.reviewStatus === "unreviewed").length;
-      const unmatched = page.labels.filter((label) => !label.consumedByRoomId).length;
+      const visibleLabels = page.labels.filter((label) => boundingBoxCenterInsideArea(label.box, page.analysisArea ?? null));
+      const unmatched = visibleLabels.filter((label) => !label.consumedByRoomId).length;
+      const analysisArea = page.analysisArea;
+      const analysisScope = analysisArea ? `${Math.round(analysisArea.width)}×${Math.round(analysisArea.height)}` : "Full page";
       this.analysisSummary.innerHTML = `
-        <div><strong>${page.labels.length}</strong><span>labels</span></div>
+        <div><strong>${visibleLabels.length}</strong><span>labels</span></div>
         <div><strong>${page.rooms.length}</strong><span>boundaries</span></div>
         <div><strong>${accepted}</strong><span>approved</span></div>
-        <div><strong>${review + unmatched}</strong><span>to review</span></div>`;
+        <div><strong>${review + unmatched}</strong><span>to review</span></div>
+        <div><strong>${escapeHtml(analysisScope)}</strong><span>analysis area</span></div>`;
     }
 
     private bindStageEvents(): void {
@@ -336,6 +381,15 @@ namespace ICPDrawingLab {
       }
 
       const local = this.eventToNormalized(event);
+      if (this.store.tool === "analysis-area") {
+        event.preventDefault();
+        this.drag = {
+          type: "analysis-area",
+          start: local,
+          current: local,
+        };
+        return;
+      }
       if (this.store.tool === "draw") {
         event.preventDefault();
         this.store.addDraftPoint(local);
@@ -406,6 +460,11 @@ namespace ICPDrawingLab {
         return;
       }
       const point = this.eventToNormalized(event);
+      if (this.drag.type === "analysis-area") {
+        this.drag.current = point;
+        void this.render();
+        return;
+      }
       if (this.drag.type === "vertex") {
         this.store.updateRoom(this.drag.roomId, (room) => {
           room.points[this.drag && this.drag.type === "vertex" ? this.drag.vertexIndex : 0] = point;
@@ -422,6 +481,16 @@ namespace ICPDrawingLab {
       if (!this.drag) return;
       if (this.drag.type === "vertex" || this.drag.type === "room") {
         this.store.commitTransaction(this.drag.before);
+      }
+      if (this.drag.type === "analysis-area") {
+        const page = this.store.activePage;
+        if (page) {
+          const area = this.boundingBoxFromPoints(this.drag.start, this.drag.current, page);
+          if (area.width >= 12 && area.height >= 12) {
+            this.store.setAnalysisArea(area);
+          }
+        }
+        this.store.setTool("select");
       }
       this.drag = null;
     }

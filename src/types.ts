@@ -19,7 +19,7 @@ namespace ICPDrawingLab {
   export type LabelSource = "pdf-text" | "svg-text" | "ocr" | "manual";
   export type ShapeSource = "automatic" | "manual";
   export type ReviewStatus = "unreviewed" | "accepted" | "rejected" | "manual" | "ignored";
-  export type EditorTool = "select" | "draw" | "add-vertex" | "delete-vertex" | "pan";
+  export type EditorTool = "select" | "draw" | "add-vertex" | "delete-vertex" | "pan" | "analysis-area";
 
   export interface DetectedLabel {
     id: string;
@@ -67,6 +67,7 @@ namespace ICPDrawingLab {
     imageDataUrl: string;
     labels: DetectedLabel[];
     rooms: RoomShape[];
+    analysisArea: BoundingBox | null;
   }
 
   export interface DrawingProject {

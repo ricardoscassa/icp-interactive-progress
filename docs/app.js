@@ -417,6 +417,17 @@ var ICPDrawingLab;
         };
     }
     ICPDrawingLab.detectBoxBoundary = detectBoxBoundary;
+    function boundingBoxCenterInsideArea(box, area) {
+        if (!area)
+            return true;
+        const centerX = box.x + box.width / 2;
+        const centerY = box.y + box.height / 2;
+        return centerX >= area.x
+            && centerX <= area.x + area.width
+            && centerY >= area.y
+            && centerY <= area.y + area.height;
+    }
+    ICPDrawingLab.boundingBoxCenterInsideArea = boundingBoxCenterInsideArea;
 })(ICPDrawingLab || (ICPDrawingLab = {}));
 var ICPDrawingLab;
 (function (ICPDrawingLab) {
@@ -516,6 +527,15 @@ var ICPDrawingLab;
 var ICPDrawingLab;
 (function (ICPDrawingLab) {
     const TESSERACT_MODULE_URL = `https://cdn.jsdelivr.net/npm/tesseract.js@${ICPDrawingLab.TESSERACT_VERSION}/dist/tesseract.esm.min.js`;
+    function resolveTesseractModule(module) {
+        if (typeof module.createWorker === "function") {
+            return module;
+        }
+        if (module.default && typeof module.default.createWorker === "function") {
+            return module.default;
+        }
+        throw new Error("The OCR library loaded, but its createWorker API was not available.");
+    }
     function intersectingBoxForCode(run, fullText, roomCode) {
         const normalizedFull = fullText.trim();
         if (!normalizedFull || normalizedFull === roomCode)
@@ -629,7 +649,8 @@ var ICPDrawingLab;
         return runs;
     }
     async function runOcr(page, roomPattern, onProgress) {
-        const tesseract = await ICPDrawingLab.dynamicImport(TESSERACT_MODULE_URL);
+        const importedModule = await ICPDrawingLab.dynamicImport(TESSERACT_MODULE_URL);
+        const tesseract = resolveTesseractModule(importedModule);
         const worker = await tesseract.createWorker("eng", 1, {
             logger: (message) => onProgress({
                 status: String(message.status ?? "OCR processing"),
@@ -670,13 +691,18 @@ var ICPDrawingLab;
     ICPDrawingLab.imageDataForPage = imageDataForPage;
     async function analysePage(page, settings, onProgress) {
         let labels = page.labels.slice();
+        const analysisArea = page.analysisArea ?? null;
         if (settings.forceOcr || labels.length === 0) {
-            onProgress("Starting OCR. The first run downloads the OCR model…", 0);
+            onProgress(analysisArea
+                ? "Starting OCR in the selected area. The first run downloads the OCR model…"
+                : "Starting OCR. The first run downloads the OCR model…", 0);
             const ocrLabels = await runOcr(page, settings.roomPattern, (progress) => {
                 onProgress(`${progress.status} · ${Math.round(progress.progress * 100)}%`, progress.progress);
             });
             const existingKeys = new Set(labels.map((label) => `${ICPDrawingLab.normalizeRoomCode(label.roomCode)}|${Math.round(label.box.x / 8)}|${Math.round(label.box.y / 8)}`));
             labels = labels.concat(ocrLabels.filter((label) => {
+                if (!ICPDrawingLab.boundingBoxCenterInsideArea(label.box, analysisArea))
+                    return false;
                 const key = `${ICPDrawingLab.normalizeRoomCode(label.roomCode)}|${Math.round(label.box.x / 8)}|${Math.round(label.box.y / 8)}`;
                 if (existingKeys.has(key))
                     return false;
@@ -685,14 +711,15 @@ var ICPDrawingLab;
             }));
             page.labels = labels;
         }
+        const labelsForAnalysis = labels.filter((label) => ICPDrawingLab.boundingBoxCenterInsideArea(label.box, analysisArea));
         let roomsSuggested = 0;
         let boundariesFailed = 0;
         let exactMatches = 0;
         let fuzzyMatches = 0;
         const imageData = settings.createBoundarySuggestions ? await imageDataForPage(page) : null;
-        for (let index = 0; index < labels.length; index += 1) {
-            const label = labels[index];
-            onProgress(`Analysing ${label.roomCode} · ${index + 1} of ${labels.length}`, labels.length ? index / labels.length : 1);
+        for (let index = 0; index < labelsForAnalysis.length; index += 1) {
+            const label = labelsForAnalysis[index];
+            onProgress(`Analysing ${label.roomCode} · ${index + 1} of ${labelsForAnalysis.length}`, labelsForAnalysis.length ? index / labelsForAnalysis.length : 1);
             const existingRoom = page.rooms.find((room) => ICPDrawingLab.normalizeRoomCode(room.displayLabel) === ICPDrawingLab.normalizeRoomCode(label.roomCode));
             if (existingRoom) {
                 label.consumedByRoomId = existingRoom.id;
@@ -728,7 +755,7 @@ var ICPDrawingLab;
             roomsSuggested += 1;
         }
         onProgress("Analysis complete", 1);
-        return { labelsFound: labels.length, roomsSuggested, boundariesFailed, exactMatches, fuzzyMatches };
+        return { labelsFound: labelsForAnalysis.length, roomsSuggested, boundariesFailed, exactMatches, fuzzyMatches };
     }
     ICPDrawingLab.analysePage = analysePage;
 })(ICPDrawingLab || (ICPDrawingLab = {}));
@@ -811,6 +838,7 @@ var ICPDrawingLab;
                     imageDataUrl: canvas.toDataURL("image/png"),
                     labels,
                     rooms: [],
+                    analysisArea: null,
                 });
             }
         }
@@ -888,6 +916,7 @@ var ICPDrawingLab;
                     imageDataUrl: rasterized.dataUrl,
                     labels: ICPDrawingLab.labelsFromTextRuns(svgTextRuns(sanitized, rasterized.width, rasterized.height), roomPattern, rasterized.width, rasterized.height),
                     rooms: [],
+                    analysisArea: null,
                 }];
         }
         const source = await ICPDrawingLab.readFileAsDataUrl(file);
@@ -901,6 +930,7 @@ var ICPDrawingLab;
                 imageDataUrl: rasterized.dataUrl,
                 labels: [],
                 rooms: [],
+                analysisArea: null,
             }];
     }
     ICPDrawingLab.loadImageFile = loadImageFile;
@@ -940,6 +970,7 @@ var ICPDrawingLab;
             imageDataUrl: rasterized.dataUrl,
             labels: ICPDrawingLab.labelsFromTextRuns(svgTextRuns(sanitized, rasterized.width, rasterized.height), roomPattern, rasterized.width, rasterized.height),
             rooms: [],
+            analysisArea: null,
         };
     }
     ICPDrawingLab.loadSamplePage = loadSamplePage;
@@ -1037,6 +1068,22 @@ var ICPDrawingLab;
         }
         addDraftPoint(point) {
             this.draftPoints.push({ x: ICPDrawingLab.round(point.x), y: ICPDrawingLab.round(point.y) });
+            this.notify();
+        }
+        setAnalysisArea(area) {
+            const page = this.activePage;
+            if (!page)
+                return;
+            this.pushHistory();
+            page.analysisArea = area ? ICPDrawingLab.deepClone(area) : null;
+            this.notify();
+        }
+        clearAnalysisArea() {
+            const page = this.activePage;
+            if (!page?.analysisArea)
+                return;
+            this.pushHistory();
+            page.analysisArea = null;
             this.notify();
         }
         cancelDraft() {
@@ -1217,6 +1264,9 @@ var ICPDrawingLab;
             if (!page || typeof page !== "object" || !Array.isArray(page.rooms) || !Array.isArray(page.labels)) {
                 throw new Error("A drawing page in the project is invalid.");
             }
+            const pageWithArea = page;
+            if (pageWithArea.analysisArea === undefined)
+                pageWithArea.analysisArea = null;
             for (const room of page.rooms) {
                 if (!Array.isArray(room.points) || room.points.length < 3) {
                     throw new Error(`Room ${String(room.displayLabel ?? room.id)} has invalid geometry.`);
@@ -1242,6 +1292,8 @@ var ICPDrawingLab;
         inspector = ICPDrawingLab.assertElement("#inspectorContent");
         analysisSummary = ICPDrawingLab.assertElement("#analysisSummary");
         emptyState = ICPDrawingLab.assertElement("#emptyStage");
+        selectAnalysisAreaButton = ICPDrawingLab.assertElement("#selectAnalysisAreaButton");
+        clearAnalysisAreaButton = ICPDrawingLab.assertElement("#clearAnalysisAreaButton");
         draftLabelInput = ICPDrawingLab.assertElement("#draftRoomLabel");
         finishDraftButton = ICPDrawingLab.assertElement("#finishDraftButton");
         cancelDraftButton = ICPDrawingLab.assertElement("#cancelDraftButton");
@@ -1312,6 +1364,33 @@ var ICPDrawingLab;
             context.fillRect(0, 0, page.width, page.height);
             context.drawImage(image, 0, 0, page.width, page.height);
         }
+        activeAnalysisArea(page) {
+            if (this.drag?.type === "analysis-area") {
+                return this.boundingBoxFromPoints(this.drag.start, this.drag.current, page);
+            }
+            return page.analysisArea ?? null;
+        }
+        boundingBoxFromPoints(start, end, page) {
+            const left = ICPDrawingLab.clamp(Math.min(start.x, end.x), 0, 1);
+            const top = ICPDrawingLab.clamp(Math.min(start.y, end.y), 0, 1);
+            const right = ICPDrawingLab.clamp(Math.max(start.x, end.x), 0, 1);
+            const bottom = ICPDrawingLab.clamp(Math.max(start.y, end.y), 0, 1);
+            return {
+                x: ICPDrawingLab.round(left * page.width),
+                y: ICPDrawingLab.round(top * page.height),
+                width: ICPDrawingLab.round((right - left) * page.width),
+                height: ICPDrawingLab.round((bottom - top) * page.height),
+            };
+        }
+        analysisAreaSvg(area) {
+            if (!area || area.width < 4 || area.height < 4)
+                return "";
+            return `
+        <g class="analysis-area-layer">
+          <rect class="analysis-area-rect" x="${area.x}" y="${area.y}" width="${area.width}" height="${area.height}" rx="6" />
+          <text class="analysis-area-label" x="${area.x + 10}" y="${Math.max(18, area.y - 10)}">Recognition area</text>
+        </g>`;
+        }
         renderStageGeometry() {
             const page = this.store.activePage;
             const hasPage = Boolean(page);
@@ -1330,11 +1409,12 @@ var ICPDrawingLab;
             this.zoomOutput.textContent = `${Math.round(this.store.view.scale * 100)}%`;
             const rooms = page.rooms.map((room) => this.roomSvg(room, page)).join("");
             const labels = page.labels
-                .filter((label) => !label.consumedByRoomId)
+                .filter((label) => !label.consumedByRoomId && ICPDrawingLab.boundingBoxCenterInsideArea(label.box, page.analysisArea ?? null))
                 .map((label) => this.labelSvg(label))
                 .join("");
             const draft = this.draftSvg(page);
-            this.overlay.innerHTML = `${rooms}${labels}${draft}`;
+            const analysisArea = this.analysisAreaSvg(this.activeAnalysisArea(page));
+            this.overlay.innerHTML = `${rooms}${labels}${draft}${analysisArea}`;
         }
         roomSvg(room, page) {
             const selected = room.id === this.store.selectedRoomId;
@@ -1392,8 +1472,12 @@ var ICPDrawingLab;
             });
             this.undoButton.disabled = !this.store.canUndo();
             this.redoButton.disabled = !this.store.canRedo();
+            const selectingArea = this.store.tool === "analysis-area";
+            this.selectAnalysisAreaButton.classList.toggle("is-active", selectingArea);
+            this.clearAnalysisAreaButton.disabled = !this.store.activePage?.analysisArea;
             const drawing = this.store.tool === "draw";
             document.body.classList.toggle("is-drawing", drawing);
+            document.body.classList.toggle("is-selecting-area", selectingArea);
             this.finishDraftButton.disabled = this.store.draftPoints.length < 3;
             this.cancelDraftButton.disabled = this.store.draftPoints.length === 0;
             if (document.activeElement !== this.draftLabelInput)
@@ -1420,7 +1504,7 @@ var ICPDrawingLab;
           <span class="review-pill" data-status="${room.reviewStatus}">${ICPDrawingLab.escapeHtml(status)}</span>
         </button>`;
             }).join("");
-            const unmatchedRows = page.labels.filter((label) => !label.consumedByRoomId).map((label) => `
+            const unmatchedRows = page.labels.filter((label) => !label.consumedByRoomId && ICPDrawingLab.boundingBoxCenterInsideArea(label.box, page.analysisArea ?? null)).map((label) => `
         <button type="button" class="room-list-row label-row ${label.id === this.store.selectedLabelId ? "is-active" : ""}" data-select-label="${label.id}">
           <span class="room-list-main"><strong>${ICPDrawingLab.escapeHtml(label.roomCode)}</strong><small>${ICPDrawingLab.escapeHtml(label.source)} · no boundary</small></span>
           <span class="review-pill" data-status="unreviewed">label</span>
@@ -1483,12 +1567,16 @@ var ICPDrawingLab;
             }
             const accepted = page.rooms.filter((room) => room.reviewStatus === "accepted" || room.reviewStatus === "manual").length;
             const review = page.rooms.filter((room) => room.reviewStatus === "unreviewed").length;
-            const unmatched = page.labels.filter((label) => !label.consumedByRoomId).length;
+            const visibleLabels = page.labels.filter((label) => ICPDrawingLab.boundingBoxCenterInsideArea(label.box, page.analysisArea ?? null));
+            const unmatched = visibleLabels.filter((label) => !label.consumedByRoomId).length;
+            const analysisArea = page.analysisArea;
+            const analysisScope = analysisArea ? `${Math.round(analysisArea.width)}×${Math.round(analysisArea.height)}` : "Full page";
             this.analysisSummary.innerHTML = `
-        <div><strong>${page.labels.length}</strong><span>labels</span></div>
+        <div><strong>${visibleLabels.length}</strong><span>labels</span></div>
         <div><strong>${page.rooms.length}</strong><span>boundaries</span></div>
         <div><strong>${accepted}</strong><span>approved</span></div>
-        <div><strong>${review + unmatched}</strong><span>to review</span></div>`;
+        <div><strong>${review + unmatched}</strong><span>to review</span></div>
+        <div><strong>${ICPDrawingLab.escapeHtml(analysisScope)}</strong><span>analysis area</span></div>`;
         }
         bindStageEvents() {
             this.overlay.addEventListener("pointerdown", (event) => this.handlePointerDown(event));
@@ -1536,6 +1624,15 @@ var ICPDrawingLab;
                 return;
             }
             const local = this.eventToNormalized(event);
+            if (this.store.tool === "analysis-area") {
+                event.preventDefault();
+                this.drag = {
+                    type: "analysis-area",
+                    start: local,
+                    current: local,
+                };
+                return;
+            }
             if (this.store.tool === "draw") {
                 event.preventDefault();
                 this.store.addDraftPoint(local);
@@ -1601,6 +1698,11 @@ var ICPDrawingLab;
                 return;
             }
             const point = this.eventToNormalized(event);
+            if (this.drag.type === "analysis-area") {
+                this.drag.current = point;
+                void this.render();
+                return;
+            }
             if (this.drag.type === "vertex") {
                 this.store.updateRoom(this.drag.roomId, (room) => {
                     room.points[this.drag && this.drag.type === "vertex" ? this.drag.vertexIndex : 0] = point;
@@ -1617,6 +1719,16 @@ var ICPDrawingLab;
                 return;
             if (this.drag.type === "vertex" || this.drag.type === "room") {
                 this.store.commitTransaction(this.drag.before);
+            }
+            if (this.drag.type === "analysis-area") {
+                const page = this.store.activePage;
+                if (page) {
+                    const area = this.boundingBoxFromPoints(this.drag.start, this.drag.current, page);
+                    if (area.width >= 12 && area.height >= 12) {
+                        this.store.setAnalysisArea(area);
+                    }
+                }
+                this.store.setTool("select");
             }
             this.drag = null;
         }
@@ -1732,6 +1844,14 @@ var ICPDrawingLab;
             this.planInput.addEventListener("change", () => void this.handlePlanFiles());
             ICPDrawingLab.assertElement("#loadSampleButton").addEventListener("click", () => void this.loadSample());
             this.analyseButton.addEventListener("click", () => void this.analyseActivePage());
+            ICPDrawingLab.assertElement("#selectAnalysisAreaButton").addEventListener("click", () => {
+                this.store.setTool(this.store.tool === "analysis-area" ? "select" : "analysis-area");
+                ICPDrawingLab.setStatus(this.store.tool === "analysis-area" ? "Drag over the drawing to define the recognition area." : "Area selection cancelled.");
+            });
+            ICPDrawingLab.assertElement("#clearAnalysisAreaButton").addEventListener("click", () => {
+                this.store.clearAnalysisArea();
+                ICPDrawingLab.setStatus("Recognition area cleared. The whole page will be analysed.", "success");
+            });
             ICPDrawingLab.assertElement("#clearAutomaticButton").addEventListener("click", () => this.clearAutomaticSuggestions());
             ICPDrawingLab.assertElement("#saveProjectButton").addEventListener("click", () => this.saveProject());
             ICPDrawingLab.assertElement("#loadProjectButton").addEventListener("click", () => this.projectInput.click());
@@ -1841,7 +1961,8 @@ var ICPDrawingLab;
                         this.analysisProgress.value = progress;
                 });
                 this.store.commitTransaction(before);
-                ICPDrawingLab.setStatus(`Recognition complete: ${summary.labelsFound} labels, ${summary.roomsSuggested} boundary suggestions, ${summary.boundariesFailed} labels without a box.`, summary.boundariesFailed ? "warning" : "success");
+                const areaMessage = page.analysisArea ? " inside the selected area" : "";
+                ICPDrawingLab.setStatus(`Recognition complete${areaMessage}: ${summary.labelsFound} labels, ${summary.roomsSuggested} boundary suggestions, ${summary.boundariesFailed} labels without a box.`, summary.boundariesFailed ? "warning" : "success");
             }
             catch (error) {
                 console.error(error);
@@ -1937,6 +2058,7 @@ var ICPDrawingLab;
                 a: "add-vertex",
                 x: "delete-vertex",
                 h: "pan",
+                r: "analysis-area",
             };
             const tool = shortcuts[event.key.toLowerCase()];
             if (tool)
@@ -1946,6 +2068,8 @@ var ICPDrawingLab;
             this.analyseButton.disabled = busy;
             ICPDrawingLab.assertElement("#uploadPlanButton").disabled = busy;
             ICPDrawingLab.assertElement("#loadSampleButton").disabled = busy;
+            ICPDrawingLab.assertElement("#selectAnalysisAreaButton").disabled = busy;
+            ICPDrawingLab.assertElement("#clearAnalysisAreaButton").disabled = busy;
             document.body.classList.toggle("is-busy", busy);
         }
     }

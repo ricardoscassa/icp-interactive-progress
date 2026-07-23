@@ -190,13 +190,17 @@ namespace ICPDrawingLab {
     onProgress: (message: string, progress?: number) => void,
   ): Promise<AnalysisSummary> {
     let labels = page.labels.slice();
+    const analysisArea = page.analysisArea ?? null;
     if (settings.forceOcr || labels.length === 0) {
-      onProgress("Starting OCR. The first run downloads the OCR model…", 0);
+      onProgress(analysisArea
+        ? "Starting OCR in the selected area. The first run downloads the OCR model…"
+        : "Starting OCR. The first run downloads the OCR model…", 0);
       const ocrLabels = await runOcr(page, settings.roomPattern, (progress) => {
         onProgress(`${progress.status} · ${Math.round(progress.progress * 100)}%`, progress.progress);
       });
       const existingKeys = new Set(labels.map((label) => `${normalizeRoomCode(label.roomCode)}|${Math.round(label.box.x / 8)}|${Math.round(label.box.y / 8)}`));
       labels = labels.concat(ocrLabels.filter((label) => {
+        if (!boundingBoxCenterInsideArea(label.box, analysisArea)) return false;
         const key = `${normalizeRoomCode(label.roomCode)}|${Math.round(label.box.x / 8)}|${Math.round(label.box.y / 8)}`;
         if (existingKeys.has(key)) return false;
         existingKeys.add(key);
@@ -205,15 +209,16 @@ namespace ICPDrawingLab {
       page.labels = labels;
     }
 
+    const labelsForAnalysis = labels.filter((label) => boundingBoxCenterInsideArea(label.box, analysisArea));
     let roomsSuggested = 0;
     let boundariesFailed = 0;
     let exactMatches = 0;
     let fuzzyMatches = 0;
     const imageData = settings.createBoundarySuggestions ? await imageDataForPage(page) : null;
 
-    for (let index = 0; index < labels.length; index += 1) {
-      const label = labels[index];
-      onProgress(`Analysing ${label.roomCode} · ${index + 1} of ${labels.length}`, labels.length ? index / labels.length : 1);
+    for (let index = 0; index < labelsForAnalysis.length; index += 1) {
+      const label = labelsForAnalysis[index];
+      onProgress(`Analysing ${label.roomCode} · ${index + 1} of ${labelsForAnalysis.length}`, labelsForAnalysis.length ? index / labelsForAnalysis.length : 1);
       const existingRoom = page.rooms.find((room) => normalizeRoomCode(room.displayLabel) === normalizeRoomCode(label.roomCode));
       if (existingRoom) {
         label.consumedByRoomId = existingRoom.id;
@@ -249,6 +254,6 @@ namespace ICPDrawingLab {
     }
 
     onProgress("Analysis complete", 1);
-    return { labelsFound: labels.length, roomsSuggested, boundariesFailed, exactMatches, fuzzyMatches };
+    return { labelsFound: labelsForAnalysis.length, roomsSuggested, boundariesFailed, exactMatches, fuzzyMatches };
   }
 }

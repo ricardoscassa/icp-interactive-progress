@@ -52,6 +52,26 @@ namespace ICPDrawingLab {
       },
     },
     {
+      name: "keeps labels whose centre is inside the recognition area",
+      run: () => {
+        const area: BoundingBox = { x: 100, y: 100, width: 400, height: 300 };
+        assert(
+          boundingBoxCenterInsideArea({ x: 250, y: 180, width: 40, height: 20 }, area),
+          "Label inside the recognition area was rejected",
+        );
+      },
+    },
+    {
+      name: "rejects labels whose centre is outside the recognition area",
+      run: () => {
+        const area: BoundingBox = { x: 100, y: 100, width: 400, height: 300 };
+        assert(
+          !boundingBoxCenterInsideArea({ x: 540, y: 180, width: 40, height: 20 }, area),
+          "Label outside the recognition area was accepted",
+        );
+      },
+    },
+    {
       name: "calculates progress percentage safely",
       run: () => {
         assert(percentage({ total: 50, completed: 34 }) === 68, "Progress percentage is incorrect");
