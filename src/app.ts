@@ -11,6 +11,11 @@ namespace ICPDrawingLab {
     private readonly forceOcrInput = assertElement<HTMLInputElement>("#forceOcr");
     private readonly boundariesInput = assertElement<HTMLInputElement>("#createBoundaries");
     private readonly darkThresholdInput = assertElement<HTMLInputElement>("#darkThreshold");
+    private readonly usePdfLayersInput = assertElement<HTMLInputElement>("#usePdfLayers");
+    private readonly pdfLayerSection = assertElement<HTMLElement>("#pdfLayerSection");
+    private readonly areaLayerSelect = assertElement<HTMLSelectElement>("#areaLayerSelect");
+    private readonly labelLayerSelect = assertElement<HTMLSelectElement>("#labelLayerSelect");
+    private readonly pdfLayerSummary = assertElement<HTMLElement>("#pdfLayerSummary");
 
     constructor() {
       this.roomPatternInput.value = DEFAULT_ROOM_PATTERN;
@@ -37,6 +42,10 @@ namespace ICPDrawingLab {
       assertElement<HTMLButtonElement>("#loadProjectButton").addEventListener("click", () => this.projectInput.click());
       this.projectInput.addEventListener("change", () => void this.loadProject());
 
+      this.areaLayerSelect.addEventListener("change", () => this.updateSelectedLayers("area"));
+      this.labelLayerSelect.addEventListener("change", () => this.updateSelectedLayers("label"));
+      this.usePdfLayersInput.addEventListener("change", () => this.renderPdfLayerControls());
+
       document.querySelectorAll<HTMLButtonElement>("[data-editor-tool]").forEach((button) => {
         button.addEventListener("click", () => {
           const tool = button.dataset.editorTool as EditorTool | undefined;
@@ -61,6 +70,7 @@ namespace ICPDrawingLab {
       });
       this.store.subscribe(() => {
         if (document.activeElement !== this.projectName) this.projectName.value = this.store.project.name;
+        this.renderPdfLayerControls();
       });
 
       window.addEventListener("keydown", (event) => this.handleKeyboard(event));
@@ -75,7 +85,42 @@ namespace ICPDrawingLab {
         forceOcr: this.forceOcrInput.checked,
         createBoundarySuggestions: this.boundariesInput.checked,
         darkThreshold: clamp(Number(this.darkThresholdInput.value) || 155, 50, 245),
+        usePdfLayers: this.usePdfLayersInput.checked,
       };
+    }
+
+    private selectedOptions(select: HTMLSelectElement): string[] {
+      return Array.from(select.selectedOptions).map((option) => option.value);
+    }
+
+    private updateSelectedLayers(kind: "area" | "label"): void {
+      const page = this.store.activePage;
+      if (!page || page.sourceType !== "pdf") return;
+      if (kind === "area") page.selectedAreaLayerIds = this.selectedOptions(this.areaLayerSelect);
+      else page.selectedLabelLayerIds = this.selectedOptions(this.labelLayerSelect);
+      this.store.notify();
+    }
+
+    private renderLayerOptions(select: HTMLSelectElement, layers: PdfLayerInfo[], selectedIds: string[]): void {
+      if (document.activeElement === select) return;
+      const selected = new Set(selectedIds);
+      select.innerHTML = layers.map((layer) => `
+        <option value="${escapeHtml(layer.id)}" ${selected.has(layer.id) ? "selected" : ""}>
+          ${escapeHtml(layer.name)}${layer.visibleByDefault ? " · visible" : ""}
+        </option>`).join("");
+    }
+
+    private renderPdfLayerControls(): void {
+      const page = this.store.activePage;
+      const isLayeredPdf = page?.sourceType === "pdf" && page.pdfLayers.length > 0;
+      this.pdfLayerSection.hidden = !isLayeredPdf;
+      if (!page || !isLayeredPdf) return;
+      this.renderLayerOptions(this.areaLayerSelect, page.pdfLayers, page.selectedAreaLayerIds);
+      this.renderLayerOptions(this.labelLayerSelect, page.pdfLayers, page.selectedLabelLayerIds);
+      const sourceReady = hasRegisteredPdfSource(page.pdfSourceKey);
+      this.pdfLayerSummary.textContent = `${page.pdfLayers.length} layers detected · ${page.selectedAreaLayerIds.length} area · ${page.selectedLabelLayerIds.length} label${sourceReady ? "" : " · re-upload PDF required"}`;
+      this.areaLayerSelect.disabled = !this.usePdfLayersInput.checked || !sourceReady;
+      this.labelLayerSelect.disabled = !this.usePdfLayersInput.checked || !sourceReady;
     }
 
     private async handlePlanFiles(): Promise<void> {
@@ -85,12 +130,16 @@ namespace ICPDrawingLab {
       this.setBusy(true);
       try {
         const pages = await loadDrawingFiles(files, this.recognitionSettings().roomPattern, (message) => setStatus(message));
-        const name = files.length === 1
-          ? files[0].name.replace(/\.[^.]+$/, "")
-          : `Drawing test · ${files.length} files`;
+        const name = files.length === 1 ? files[0].name.replace(/\.[^.]+$/, "") : `Drawing test · ${files.length} files`;
         this.store.replacePages(pages, name);
         this.store.resetHistory();
-        setStatus(`${pages.length} drawing page${pages.length === 1 ? "" : "s"} loaded.`, "success");
+        const layerCount = pages.reduce((maximum, page) => Math.max(maximum, page.pdfLayers.length), 0);
+        setStatus(
+          layerCount
+            ? `${pages.length} page${pages.length === 1 ? "" : "s"} loaded. ${layerCount} PDF layers detected; review the suggested area and label layers.`
+            : `${pages.length} drawing page${pages.length === 1 ? "" : "s"} loaded.`,
+          "success",
+        );
         window.requestAnimationFrame(() => this.renderer.fitToViewport());
       } catch (error) {
         console.error(error);
@@ -129,6 +178,10 @@ namespace ICPDrawingLab {
         setStatus(error instanceof Error ? error.message : String(error), "error");
         return;
       }
+      if (settings.usePdfLayers && page.sourceType === "pdf" && page.pdfLayers.length && !page.selectedAreaLayerIds.length) {
+        setStatus("Select at least one PDF area layer before running layer-aware recognition.", "warning");
+        return;
+      }
       this.setBusy(true);
       this.analysisProgress.hidden = false;
       this.analysisProgress.value = 0;
@@ -140,8 +193,11 @@ namespace ICPDrawingLab {
         });
         this.store.commitTransaction(before);
         const areaMessage = page.analysisArea ? " inside the selected area" : "";
+        const vectorMessage = summary.vectorRegionsFound
+          ? ` ${summary.vectorRegionsFound} vector regions traced and ${summary.vectorRoomsSuggested} linked to labels.`
+          : "";
         setStatus(
-          `Recognition complete${areaMessage}: ${summary.labelsFound} labels, ${summary.roomsSuggested} boundary suggestions, ${summary.boundariesFailed} labels without a box.`,
+          `Recognition complete${areaMessage}: ${summary.labelsFound} labels and ${summary.roomsSuggested} room suggestions.${vectorMessage} ${summary.boundariesFailed} labels still need manual geometry.`,
           summary.boundariesFailed ? "warning" : "success",
         );
       } catch (error) {
@@ -156,15 +212,15 @@ namespace ICPDrawingLab {
     private clearAutomaticSuggestions(): void {
       const page = this.store.activePage;
       if (!page) return;
-      const automaticCount = page.rooms.filter((room) => room.source === "automatic").length;
+      const automaticCount = page.rooms.filter((room) => room.source === "automatic" || room.source === "pdf-vector").length;
       if (!automaticCount) {
         setStatus("There are no automatic suggestions to clear.", "warning");
         return;
       }
       if (!confirm(`Clear ${automaticCount} automatic room suggestion${automaticCount === 1 ? "" : "s"}? Manual rooms will remain.`)) return;
       const before = this.store.startTransaction();
-      const removedIds = new Set(page.rooms.filter((room) => room.source === "automatic").map((room) => room.id));
-      page.rooms = page.rooms.filter((room) => room.source !== "automatic");
+      const removedIds = new Set(page.rooms.filter((room) => room.source !== "manual").map((room) => room.id));
+      page.rooms = page.rooms.filter((room) => room.source === "manual");
       page.labels.forEach((label) => {
         if (label.consumedByRoomId && removedIds.has(label.consumedByRoomId)) label.consumedByRoomId = null;
       });
@@ -180,7 +236,7 @@ namespace ICPDrawingLab {
       const sizeMb = new Blob([json]).size / 1024 / 1024;
       if (sizeMb > 45 && !confirm(`This project JSON is ${sizeMb.toFixed(1)} MB because it contains embedded drawing images. Continue?`)) return;
       downloadBlob(`${safeFileName(project.name)}.icp-drawing.json`, new Blob([json], { type: "application/json" }));
-      setStatus("Project JSON downloaded.", "success");
+      setStatus("Project JSON downloaded. Re-upload the source PDF later to run layer recognition again.", "success");
     }
 
     private async loadProject(): Promise<void> {
@@ -191,7 +247,7 @@ namespace ICPDrawingLab {
         const parsed: unknown = JSON.parse(await readFileAsText(file));
         validateProject(parsed);
         this.store.importProject(parsed);
-        setStatus(`Project loaded: ${parsed.pages.length} page${parsed.pages.length === 1 ? "" : "s"}.`, "success");
+        setStatus(`Project loaded: ${parsed.pages.length} page${parsed.pages.length === 1 ? "" : "s"}. Re-upload original PDFs before rerunning layer recognition.`, "success");
         window.requestAnimationFrame(() => this.renderer.fitToViewport());
       } catch (error) {
         console.error(error);
@@ -225,12 +281,7 @@ namespace ICPDrawingLab {
         if (confirm("Delete the selected room geometry?")) this.store.deleteSelectedRoom();
       }
       const shortcuts: Record<string, EditorTool> = {
-        v: "select",
-        d: "draw",
-        a: "add-vertex",
-        x: "delete-vertex",
-        h: "pan",
-        r: "analysis-area",
+        v: "select", d: "draw", a: "add-vertex", x: "delete-vertex", h: "pan", r: "analysis-area",
       };
       const tool = shortcuts[event.key.toLowerCase()];
       if (tool) this.store.setTool(tool);
@@ -242,6 +293,8 @@ namespace ICPDrawingLab {
       assertElement<HTMLButtonElement>("#loadSampleButton").disabled = busy;
       assertElement<HTMLButtonElement>("#selectAnalysisAreaButton").disabled = busy;
       assertElement<HTMLButtonElement>("#clearAnalysisAreaButton").disabled = busy;
+      this.areaLayerSelect.disabled = busy || !this.usePdfLayersInput.checked;
+      this.labelLayerSelect.disabled = busy || !this.usePdfLayersInput.checked;
       document.body.classList.toggle("is-busy", busy);
     }
   }
