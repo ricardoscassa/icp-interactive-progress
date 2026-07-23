@@ -7,12 +7,8 @@ namespace ICPDrawingLab {
   }
 
   function resolveTesseractModule(module: TesseractModuleNamespace): TesseractModule {
-    if (typeof module.createWorker === "function") {
-      return module as TesseractModule;
-    }
-    if (module.default && typeof module.default.createWorker === "function") {
-      return module.default;
-    }
+    if (typeof module.createWorker === "function") return module as TesseractModule;
+    if (module.default && typeof module.default.createWorker === "function") return module.default;
     throw new Error("The OCR library loaded, but its createWorker API was not available.");
   }
 
@@ -73,12 +69,7 @@ namespace ICPDrawingLab {
 
   function parseTsv(tsv: string): TextRun[] {
     const rows = tsv.split(/\r?\n/).slice(1);
-    const words: Array<{
-      lineKey: string;
-      text: string;
-      confidence: number | null;
-      box: BoundingBox;
-    }> = [];
+    const words: Array<{ lineKey: string; text: string; confidence: number | null; box: BoundingBox }> = [];
     for (const row of rows) {
       if (!row.trim()) continue;
       const columns = row.split("\t");
@@ -107,17 +98,11 @@ namespace ICPDrawingLab {
       groups.set(word.lineKey, group);
     }
 
-    const runs: TextRun[] = words.map((word) => ({
-      text: word.text,
-      box: word.box,
-      confidence: word.confidence,
-      source: "ocr",
-    }));
-
+    const runs: TextRun[] = words.map((word) => ({ text: word.text, box: word.box, confidence: word.confidence, source: "ocr" }));
     for (const group of groups.values()) {
       const sorted = group.slice().sort((left, right) => left.box.x - right.box.x);
       for (let start = 0; start < sorted.length; start += 1) {
-        for (let length = 2; length <= 4 && start + length <= sorted.length; length += 1) {
+        for (let length = 2; length <= 5 && start + length <= sorted.length; length += 1) {
           const cluster = sorted.slice(start, start + length);
           const gapsAreReasonable = cluster.slice(1).every((word, index) => {
             const previous = cluster[index];
@@ -142,9 +127,11 @@ namespace ICPDrawingLab {
     return runs;
   }
 
-  export async function runOcr(
-    page: DrawingPage,
+  async function runOcrInput(
+    input: string | HTMLCanvasElement,
     roomPattern: string,
+    width: number,
+    height: number,
     onProgress: (progress: OcrProgress) => void,
   ): Promise<DetectedLabel[]> {
     const importedModule = await dynamicImport<TesseractModuleNamespace>(TESSERACT_MODULE_URL);
@@ -162,13 +149,21 @@ namespace ICPDrawingLab {
         preserve_interword_spaces: "1",
         user_defined_dpi: "300",
       });
-      const result = await worker.recognize(page.imageDataUrl, {}, { tsv: true });
+      const result = await worker.recognize(input, {}, { tsv: true });
       const tsv = String(result.data?.tsv ?? "");
       if (!tsv.trim()) return [];
-      return labelsFromTextRuns(parseTsv(tsv), roomPattern, page.width, page.height);
+      return labelsFromTextRuns(parseTsv(tsv), roomPattern, width, height);
     } finally {
       await worker.terminate();
     }
+  }
+
+  export async function runOcr(
+    page: DrawingPage,
+    roomPattern: string,
+    onProgress: (progress: OcrProgress) => void,
+  ): Promise<DetectedLabel[]> {
+    return runOcrInput(page.imageDataUrl, roomPattern, page.width, page.height, onProgress);
   }
 
   export async function imageDataForPage(page: DrawingPage): Promise<ImageData> {
@@ -184,6 +179,19 @@ namespace ICPDrawingLab {
     return context.getImageData(0, 0, page.width, page.height);
   }
 
+  function mergeDetectedLabels(existing: DetectedLabel[], additions: DetectedLabel[], area: BoundingBox | null): DetectedLabel[] {
+    const labels = existing.slice();
+    const keys = new Set(labels.map((label) => `${normalizeRoomCode(label.roomCode)}|${Math.round(label.box.x / 8)}|${Math.round(label.box.y / 8)}`));
+    for (const label of additions) {
+      if (!boundingBoxCenterInsideArea(label.box, area)) continue;
+      const key = `${normalizeRoomCode(label.roomCode)}|${Math.round(label.box.x / 8)}|${Math.round(label.box.y / 8)}`;
+      if (keys.has(key)) continue;
+      keys.add(key);
+      labels.push(label);
+    }
+    return labels;
+  }
+
   export async function analysePage(
     page: DrawingPage,
     settings: RecognitionSettings,
@@ -191,34 +199,48 @@ namespace ICPDrawingLab {
   ): Promise<AnalysisSummary> {
     let labels = page.labels.slice();
     const analysisArea = page.analysisArea ?? null;
-    if (settings.forceOcr || labels.length === 0) {
+    const canUseLayers = settings.usePdfLayers
+      && page.sourceType === "pdf"
+      && hasRegisteredPdfSource(page.pdfSourceKey)
+      && page.selectedAreaLayerIds.length > 0;
+
+    if (canUseLayers && page.selectedLabelLayerIds.length > 0) {
+      onProgress("Reading room labels from the selected PDF text layer…", 0);
+      const labelCanvas = await renderPdfLayers(page, page.selectedLabelLayerIds);
+      const layerLabels = await runOcrInput(labelCanvas, settings.roomPattern, labelCanvas.width, labelCanvas.height, (progress) => {
+        onProgress(`${progress.status} · ${Math.round(progress.progress * 100)}%`, progress.progress * 0.45);
+      });
+      labels = mergeDetectedLabels(labels, layerLabels, analysisArea);
+      page.labels = labels;
+    } else if (settings.forceOcr || labels.length === 0) {
       onProgress(analysisArea
         ? "Starting OCR in the selected area. The first run downloads the OCR model…"
         : "Starting OCR. The first run downloads the OCR model…", 0);
       const ocrLabels = await runOcr(page, settings.roomPattern, (progress) => {
-        onProgress(`${progress.status} · ${Math.round(progress.progress * 100)}%`, progress.progress);
+        onProgress(`${progress.status} · ${Math.round(progress.progress * 100)}%`, progress.progress * 0.45);
       });
-      const existingKeys = new Set(labels.map((label) => `${normalizeRoomCode(label.roomCode)}|${Math.round(label.box.x / 8)}|${Math.round(label.box.y / 8)}`));
-      labels = labels.concat(ocrLabels.filter((label) => {
-        if (!boundingBoxCenterInsideArea(label.box, analysisArea)) return false;
-        const key = `${normalizeRoomCode(label.roomCode)}|${Math.round(label.box.x / 8)}|${Math.round(label.box.y / 8)}`;
-        if (existingKeys.has(key)) return false;
-        existingKeys.add(key);
-        return true;
-      }));
+      labels = mergeDetectedLabels(labels, ocrLabels, analysisArea);
       page.labels = labels;
     }
 
     const labelsForAnalysis = labels.filter((label) => boundingBoxCenterInsideArea(label.box, analysisArea));
+    let vectorRegions: VectorRegion[] = [];
+    if (canUseLayers) {
+      onProgress("Tracing visible regions from the selected PDF area layer…", 0.48);
+      vectorRegions = await detectPdfVectorRegions(page);
+    }
+
     let roomsSuggested = 0;
+    let vectorRoomsSuggested = 0;
     let boundariesFailed = 0;
     let exactMatches = 0;
     let fuzzyMatches = 0;
     const imageData = settings.createBoundarySuggestions ? await imageDataForPage(page) : null;
+    const usedVectorRegionIds = new Set<string>();
 
     for (let index = 0; index < labelsForAnalysis.length; index += 1) {
       const label = labelsForAnalysis[index];
-      onProgress(`Analysing ${label.roomCode} · ${index + 1} of ${labelsForAnalysis.length}`, labelsForAnalysis.length ? index / labelsForAnalysis.length : 1);
+      onProgress(`Analysing ${label.roomCode} · ${index + 1} of ${labelsForAnalysis.length}`, 0.52 + (labelsForAnalysis.length ? index / labelsForAnalysis.length * 0.46 : 0.46));
       const existingRoom = page.rooms.find((room) => normalizeRoomCode(room.displayLabel) === normalizeRoomCode(label.roomCode));
       if (existingRoom) {
         label.consumedByRoomId = existingRoom.id;
@@ -228,9 +250,26 @@ namespace ICPDrawingLab {
       const match = suggestRoomMatch(label.roomCode);
       if (match.exact) exactMatches += 1;
       else if (match.room) fuzzyMatches += 1;
-      if (!settings.createBoundarySuggestions || !imageData) continue;
-      const boundary = detectBoxBoundary(imageData, label, settings.darkThreshold);
-      if (!boundary) {
+
+      const vectorRegion = vectorRegionForLabel(label, page, vectorRegions.filter((region) => !usedVectorRegionIds.has(region.id)));
+      let points: Point[] | null = null;
+      let source: ShapeSource = "automatic";
+      let confidence: number | null = null;
+      if (vectorRegion) {
+        points = vectorRegion.points;
+        source = "pdf-vector";
+        confidence = vectorRegion.confidence;
+        usedVectorRegionIds.add(vectorRegion.id);
+        vectorRoomsSuggested += 1;
+      } else if (settings.createBoundarySuggestions && imageData) {
+        const boundary = detectBoxBoundary(imageData, label, settings.darkThreshold);
+        if (boundary) {
+          points = boundary.points;
+          confidence = boundary.confidence;
+        }
+      }
+
+      if (!points) {
         boundariesFailed += 1;
         continue;
       }
@@ -238,9 +277,9 @@ namespace ICPDrawingLab {
       const room: RoomShape = {
         id: uid("room-shape"),
         displayLabel: label.roomCode,
-        points: boundary.points,
-        source: "automatic",
-        detectionConfidence: boundary.confidence,
+        points,
+        source,
+        detectionConfidence: confidence,
         detectedLabelId: label.id,
         suggestedRoomId: match.room?.id ?? null,
         linkedRoomId: null,
@@ -254,6 +293,14 @@ namespace ICPDrawingLab {
     }
 
     onProgress("Analysis complete", 1);
-    return { labelsFound: labelsForAnalysis.length, roomsSuggested, boundariesFailed, exactMatches, fuzzyMatches };
+    return {
+      labelsFound: labelsForAnalysis.length,
+      roomsSuggested,
+      boundariesFailed,
+      exactMatches,
+      fuzzyMatches,
+      vectorRegionsFound: vectorRegions.length,
+      vectorRoomsSuggested,
+    };
   }
 }
