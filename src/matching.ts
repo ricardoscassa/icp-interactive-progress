@@ -1,5 +1,5 @@
 namespace ICPDrawingLab {
-  export const DEFAULT_ROOM_PATTERN = String.raw`\b(?:ROOM\s*)?([A-Z]{0,4}[-_ ]?\d{2,4}[A-Z]?|[A-Z0-9]{1,6}[-_]\d{2,4}[A-Z]?|[A-Z0-9]*ZL[-_ ]*[A-Z0-9-]+)\b`;
+  export const DEFAULT_ROOM_PATTERN = String.raw`\b(?:ROOM\s*)?((?:\d[A-Z]{2,4}\d{2}\s*\d{2,3}ZL)|(?:[A-Z]{0,4}[-_ ]?\d{2,4}[A-Z]?)|(?:[A-Z0-9]{1,6}[-_]\d{2,4}[A-Z]?)|(?:[A-Z0-9]*ZL[-_ ]*[A-Z0-9-]+))\b`;
 
   export const FAKE_ROOM_DATABASE: RoomRecord[] = [
     { id: "room-101", code: "101", name: "Electrical Switch Room", building: "1A", level: "L01" },
@@ -12,6 +12,9 @@ namespace ICPDrawingLab {
     { id: "room-108", code: "108", name: "Pump Room", building: "1A", level: "L01" },
     { id: "room-zl201", code: "ZL-201", name: "Zone Logistics 201", building: "1A", level: "L02" },
     { id: "room-1a201", code: "1A-201", name: "Main Distribution Room", building: "1A", level: "L02" },
+    { id: "room-1hh01-24zl", code: "1HH01 24ZL", name: "HPC Room 24ZL", building: "HH01", level: "24ZL" },
+    { id: "room-1hh01-23zl", code: "1HH01 23ZL", name: "HPC Room 23ZL", building: "HH01", level: "23ZL" },
+    { id: "room-1hh01-40zl", code: "1HH01 40ZL", name: "HPC Room 40ZL", building: "HH01", level: "40ZL" },
   ];
 
   export function normalizeRoomCode(value: string): string {
@@ -31,7 +34,7 @@ namespace ICPDrawingLab {
     const values: string[] = [];
     let match: RegExpExecArray | null;
     while ((match = regex.exec(text)) !== null) {
-      const candidate = String(match[1] ?? match[0] ?? "").trim();
+      const candidate = String(match[1] ?? match[0] ?? "").replace(/\s+/g, " ").trim();
       if (candidate) values.push(candidate);
       if (match.index === regex.lastIndex) regex.lastIndex += 1;
     }
