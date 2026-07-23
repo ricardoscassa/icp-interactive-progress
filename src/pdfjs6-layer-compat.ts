@@ -64,6 +64,7 @@ namespace ICPDrawingLab {
 
     const originalRender = prototype.render;
     prototype.render = function (
+      this: PdfPageLike,
       options: Parameters<PdfPageLike["render"]>[0] & { intent?: string },
     ): ReturnType<PdfPageLike["render"]> {
       const compatibleOptions = options.optionalContentConfigPromise && !options.intent
