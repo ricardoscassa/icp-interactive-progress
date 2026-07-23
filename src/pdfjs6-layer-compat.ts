@@ -3,77 +3,78 @@ namespace ICPDrawingLab {
     [Symbol.iterator]?: () => IterableIterator<[string, PdfOptionalContentGroupLike]>;
   }
 
-  interface PdfDocumentCompatibilityState extends PdfDocumentLike {
-    __icpPdfJs6CompatibilityInstalled?: boolean;
+  interface PdfPageRenderPrototypeLike extends PdfPageLike {
+    __icpLayerIntentPatched?: boolean;
   }
 
-  interface PdfPageCompatibilityState extends PdfPageLike {
-    __icpPdfJs6CompatibilityInstalled?: boolean;
+  interface PdfJsModuleWithPageProxy extends PdfJsModule {
+    PDFPageProxy?: {
+      prototype: PdfPageRenderPrototypeLike;
+    };
   }
 
-  interface PdfModuleCompatibilityState extends PdfJsModule {
-    __icpPdfJs6CompatibilityInstalled?: boolean;
-  }
-
-  function addLegacyLayerEnumeration(config: PdfOptionalContentConfigLike): PdfOptionalContentConfigLike {
+  function installLayerEnumeration(config: PdfOptionalContentConfigLike | null): PdfOptionalContentConfigLike | null {
+    if (!config) return null;
     const compatible = config as PdfOptionalContentConfigIteratorLike;
     if (typeof compatible.getGroups === "function") return compatible;
     if (typeof compatible[Symbol.iterator] !== "function") return compatible;
 
-    const iterable = compatible as Iterable<[string, PdfOptionalContentGroupLike]>;
-    compatible.getGroups = () => Object.fromEntries(Array.from(iterable));
-    return compatible;
-  }
+    const getGroups = function (this: PdfOptionalContentConfigIteratorLike): Record<string, PdfOptionalContentGroupLike> {
+      return Object.fromEntries(Array.from(this as Iterable<[string, PdfOptionalContentGroupLike]>));
+    };
 
-  function makePageRenderIntentCompatible(page: PdfPageLike): PdfPageLike {
-    const compatible = page as PdfPageCompatibilityState;
-    if (compatible.__icpPdfJs6CompatibilityInstalled) return compatible;
-
-    const originalRender = compatible.render.bind(compatible);
-    compatible.render = ((options: Parameters<PdfPageLike["render"]>[0] & { intent?: string }) => {
-      const renderOptions = options.optionalContentConfigPromise && !options.intent
-        ? { ...options, intent: "any" }
-        : options;
-      return originalRender(renderOptions);
-    }) as PdfPageLike["render"];
-    compatible.__icpPdfJs6CompatibilityInstalled = true;
-    return compatible;
-  }
-
-  function makeDocumentLayerCompatible(documentValue: PdfDocumentLike): PdfDocumentLike {
-    const compatible = documentValue as PdfDocumentCompatibilityState;
-    if (compatible.__icpPdfJs6CompatibilityInstalled) return compatible;
-
-    const originalOptionalContentConfig = compatible.getOptionalContentConfig?.bind(compatible);
-    if (originalOptionalContentConfig) {
-      compatible.getOptionalContentConfig = async (options) => addLegacyLayerEnumeration(
-        await originalOptionalContentConfig(options),
-      );
+    const prototype = Object.getPrototypeOf(compatible) as PdfOptionalContentConfigIteratorLike | null;
+    try {
+      if (prototype && typeof prototype.getGroups !== "function") {
+        Object.defineProperty(prototype, "getGroups", {
+          configurable: true,
+          value: getGroups,
+          writable: true,
+        });
+      }
+    } catch (error) {
+      console.warn("Could not add PDF layer enumeration to the shared prototype.", error);
     }
 
-    const originalGetPage = compatible.getPage.bind(compatible);
-    compatible.getPage = async (pageNumber) => makePageRenderIntentCompatible(
-      await originalGetPage(pageNumber),
-    );
-
-    compatible.__icpPdfJs6CompatibilityInstalled = true;
+    if (typeof compatible.getGroups !== "function") {
+      Object.defineProperty(compatible, "getGroups", {
+        configurable: true,
+        value: getGroups,
+        writable: true,
+      });
+    }
     return compatible;
   }
 
-  async function installPdfJs6LayerCompatibility(): Promise<void> {
-    const moduleValue = await getPdfModule() as PdfModuleCompatibilityState;
-    if (moduleValue.__icpPdfJs6CompatibilityInstalled) return;
-
-    const originalGetDocument = moduleValue.getDocument.bind(moduleValue);
-    moduleValue.getDocument = (options) => {
-      const loadingTask = originalGetDocument(options);
-      loadingTask.promise = loadingTask.promise.then(makeDocumentLayerCompatible);
-      return loadingTask;
+  const originalPdfLayerInfos = pdfLayerInfos;
+  const globalNamespace = (globalThis as typeof globalThis & {
+    ICPDrawingLab?: {
+      pdfLayerInfos?: typeof pdfLayerInfos;
     };
-    moduleValue.__icpPdfJs6CompatibilityInstalled = true;
+  }).ICPDrawingLab;
+
+  if (globalNamespace) {
+    globalNamespace.pdfLayerInfos = (config) => originalPdfLayerInfos(installLayerEnumeration(config));
   }
 
-  void installPdfJs6LayerCompatibility().catch((error) => {
-    console.error("Could not install PDF.js 6 layer compatibility.", error);
+  async function patchPdfPageRenderIntent(): Promise<void> {
+    const moduleValue = await getPdfModule() as PdfJsModuleWithPageProxy;
+    const prototype = moduleValue.PDFPageProxy?.prototype;
+    if (!prototype || prototype.__icpLayerIntentPatched) return;
+
+    const originalRender = prototype.render;
+    prototype.render = function (
+      options: Parameters<PdfPageLike["render"]>[0] & { intent?: string },
+    ): ReturnType<PdfPageLike["render"]> {
+      const compatibleOptions = options.optionalContentConfigPromise && !options.intent
+        ? { ...options, intent: "any" }
+        : options;
+      return originalRender.call(this, compatibleOptions);
+    } as PdfPageLike["render"];
+    prototype.__icpLayerIntentPatched = true;
+  }
+
+  void patchPdfPageRenderIntent().catch((error) => {
+    console.warn("Could not patch the PDF.js layer render intent.", error);
   });
 }
