@@ -20,7 +20,8 @@ namespace ICPDrawingLab {
     if (typeof compatible.getGroups === "function") return compatible;
     if (typeof compatible[Symbol.iterator] !== "function") return compatible;
 
-    compatible.getGroups = () => Object.fromEntries(Array.from(compatible));
+    const iterable = compatible as Iterable<[string, PdfOptionalContentGroupLike]>;
+    compatible.getGroups = () => Object.fromEntries(Array.from(iterable));
     return compatible;
   }
 
