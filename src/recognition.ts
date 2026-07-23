@@ -192,6 +192,33 @@ namespace ICPDrawingLab {
     return labels;
   }
 
+  function createSuggestedRoom(
+    page: DrawingPage,
+    displayLabel: string,
+    points: Point[],
+    source: ShapeSource,
+    confidence: number | null,
+    label: DetectedLabel | null,
+  ): RoomShape {
+    const match = label ? suggestRoomMatch(displayLabel) : { room: null, confidence: null, exact: false };
+    const room: RoomShape = {
+      id: uid("room-shape"),
+      displayLabel,
+      points,
+      source,
+      detectionConfidence: confidence,
+      detectedLabelId: label?.id ?? null,
+      suggestedRoomId: match.room?.id ?? null,
+      linkedRoomId: null,
+      matchConfidence: match.confidence,
+      reviewStatus: "unreviewed",
+      progress: fakeProgressForRoom(displayLabel),
+    };
+    page.rooms.push(room);
+    if (label) label.consumedByRoomId = room.id;
+    return room;
+  }
+
   export async function analysePage(
     page: DrawingPage,
     settings: RecognitionSettings,
@@ -208,39 +235,45 @@ namespace ICPDrawingLab {
       onProgress("Reading room labels from the selected PDF text layer…", 0);
       const labelCanvas = await renderPdfLayers(page, page.selectedLabelLayerIds);
       const layerLabels = await runOcrInput(labelCanvas, settings.roomPattern, labelCanvas.width, labelCanvas.height, (progress) => {
-        onProgress(`${progress.status} · ${Math.round(progress.progress * 100)}%`, progress.progress * 0.45);
+        onProgress(`${progress.status} · ${Math.round(progress.progress * 100)}%`, progress.progress * 0.32);
       });
       labels = mergeDetectedLabels(labels, layerLabels, analysisArea);
       page.labels = labels;
     } else if (settings.forceOcr || labels.length === 0) {
-      onProgress(analysisArea
-        ? "Starting OCR in the selected area. The first run downloads the OCR model…"
-        : "Starting OCR. The first run downloads the OCR model…", 0);
+      onProgress("Reading room labels with OCR…", 0);
       const ocrLabels = await runOcr(page, settings.roomPattern, (progress) => {
-        onProgress(`${progress.status} · ${Math.round(progress.progress * 100)}%`, progress.progress * 0.45);
+        onProgress(`${progress.status} · ${Math.round(progress.progress * 100)}%`, progress.progress * 0.32);
       });
       labels = mergeDetectedLabels(labels, ocrLabels, analysisArea);
       page.labels = labels;
     }
 
     const labelsForAnalysis = labels.filter((label) => boundingBoxCenterInsideArea(label.box, analysisArea));
+    let colourRegions: VectorRegion[] = [];
     let vectorRegions: VectorRegion[] = [];
-    if (canUseLayers) {
-      onProgress("Tracing visible regions from the selected PDF area layer…", 0.48);
+    if (settings.useColourRegions) {
+      onProgress("Detecting connected coloured room regions…", 0.34);
+      colourRegions = await detectColourRegions(page, settings.colourTolerance, settings.colourSaturationFloor);
+    }
+    if (!colourRegions.length && canUseLayers) {
+      onProgress("No colour regions found; trying selected PDF area layers…", 0.46);
       vectorRegions = await detectPdfVectorRegions(page);
     }
 
     let roomsSuggested = 0;
     let vectorRoomsSuggested = 0;
+    let colourRoomsSuggested = 0;
+    let unlabelledRegionsSuggested = 0;
     let boundariesFailed = 0;
     let exactMatches = 0;
     let fuzzyMatches = 0;
     const imageData = settings.createBoundarySuggestions ? await imageDataForPage(page) : null;
+    const usedColourRegionIds = new Set<string>();
     const usedVectorRegionIds = new Set<string>();
 
     for (let index = 0; index < labelsForAnalysis.length; index += 1) {
       const label = labelsForAnalysis[index];
-      onProgress(`Analysing ${label.roomCode} · ${index + 1} of ${labelsForAnalysis.length}`, 0.52 + (labelsForAnalysis.length ? index / labelsForAnalysis.length * 0.46 : 0.46));
+      onProgress(`Matching ${label.roomCode} · ${index + 1} of ${labelsForAnalysis.length}`, 0.52 + (labelsForAnalysis.length ? index / labelsForAnalysis.length * 0.34 : 0.34));
       const existingRoom = page.rooms.find((room) => normalizeRoomCode(room.displayLabel) === normalizeRoomCode(label.roomCode));
       if (existingRoom) {
         label.consumedByRoomId = existingRoom.id;
@@ -251,11 +284,18 @@ namespace ICPDrawingLab {
       if (match.exact) exactMatches += 1;
       else if (match.room) fuzzyMatches += 1;
 
-      const vectorRegion = vectorRegionForLabel(label, page, vectorRegions.filter((region) => !usedVectorRegionIds.has(region.id)));
+      const colourRegion = vectorRegionForLabel(label, page, colourRegions.filter((region) => !usedColourRegionIds.has(region.id)));
+      const vectorRegion = colourRegion ? null : vectorRegionForLabel(label, page, vectorRegions.filter((region) => !usedVectorRegionIds.has(region.id)));
       let points: Point[] | null = null;
       let source: ShapeSource = "automatic";
       let confidence: number | null = null;
-      if (vectorRegion) {
+      if (colourRegion) {
+        points = colourRegion.points;
+        source = "colour-region";
+        confidence = colourRegion.confidence;
+        usedColourRegionIds.add(colourRegion.id);
+        colourRoomsSuggested += 1;
+      } else if (vectorRegion) {
         points = vectorRegion.points;
         source = "pdf-vector";
         confidence = vectorRegion.confidence;
@@ -273,23 +313,30 @@ namespace ICPDrawingLab {
         boundariesFailed += 1;
         continue;
       }
-
-      const room: RoomShape = {
-        id: uid("room-shape"),
-        displayLabel: label.roomCode,
-        points,
-        source,
-        detectionConfidence: confidence,
-        detectedLabelId: label.id,
-        suggestedRoomId: match.room?.id ?? null,
-        linkedRoomId: null,
-        matchConfidence: match.confidence,
-        reviewStatus: "unreviewed",
-        progress: fakeProgressForRoom(label.roomCode),
-      };
-      page.rooms.push(room);
-      label.consumedByRoomId = room.id;
+      createSuggestedRoom(page, label.roomCode, points, source, confidence, label);
       roomsSuggested += 1;
+    }
+
+    const unusedColourRegions = colourRegions.filter((region) => !usedColourRegionIds.has(region.id));
+    for (let index = 0; index < unusedColourRegions.length; index += 1) {
+      const region = unusedColourRegions[index];
+      const duplicate = page.rooms.some((room) => {
+        const left = polygonCentroid(room.points);
+        const right = polygonCentroid(region.points);
+        return Math.hypot(left.x - right.x, left.y - right.y) < 0.015;
+      });
+      if (duplicate) continue;
+      createSuggestedRoom(
+        page,
+        `UNASSIGNED ${String(index + 1).padStart(3, "0")}`,
+        region.points,
+        "colour-region",
+        region.confidence,
+        null,
+      );
+      roomsSuggested += 1;
+      colourRoomsSuggested += 1;
+      unlabelledRegionsSuggested += 1;
     }
 
     onProgress("Analysis complete", 1);
@@ -301,6 +348,9 @@ namespace ICPDrawingLab {
       fuzzyMatches,
       vectorRegionsFound: vectorRegions.length,
       vectorRoomsSuggested,
+      colourRegionsFound: colourRegions.length,
+      colourRoomsSuggested,
+      unlabelledRegionsSuggested,
     };
   }
 }
