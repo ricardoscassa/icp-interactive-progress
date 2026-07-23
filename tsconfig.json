@@ -19,6 +19,7 @@
     "src/geometry.ts",
     "src/matching.ts",
     "src/pdf-layer-recognition.ts",
+    "src/pdfjs6-layer-compat.ts",
     "src/pdf-layer-preview.ts",
     "src/colour-region-recognition.ts",
     "src/recognition.ts",
