@@ -27,9 +27,11 @@
       </section>
 
       <section id="pdfLayerSection" class="panel-section pdf-layer-section" hidden>
-        <span class="section-kicker">PDF structure</span><h2>Layer-aware recognition</h2>
+        <span class="section-kicker">PDF structure</span><h2>Choose the drawing view</h2>
         <p id="pdfLayerSummary">No layered PDF loaded.</p>
-        <label class="check-row"><input id="usePdfLayers" type="checkbox" checked /> <span>Use selected PDF layers</span></label>
+        <label class="field compact"><span>Visible layers in the drawing</span><select id="visibleLayerSelect" multiple size="7"></select><small>Choose what should remain visible, then apply the layer view before drawing the recognition area. The colour detector will analyse this filtered preview.</small></label>
+        <div class="stacked-actions compact-actions"><button id="applyLayerPreviewButton" class="button primary full-width" type="button">Apply layer view</button><button id="resetLayerPreviewButton" class="button full-width" type="button">Restore full drawing</button></div>
+        <label class="check-row"><input id="usePdfLayers" type="checkbox" checked /> <span>Use selected PDF layers as recognition fallbacks</span></label>
         <label class="field compact"><span>Area / room-shape layers</span><select id="areaLayerSelect" multiple size="5"></select><small>Select the layer containing filled erection areas or room regions.</small></label>
         <label class="field compact"><span>Room-name / text layers</span><select id="labelLayerSelect" multiple size="5"></select><small>These layers are isolated and OCR is applied only to their content.</small></label>
       </section>
@@ -53,7 +55,7 @@
     <section class="workspace">
       <div class="page-tabs-bar"><div id="pageTabs" class="page-tabs"></div></div>
       <div class="toolbar" role="toolbar" aria-label="Drawing editor tools">
-        <div class="tool-group"><button class="tool-button is-active" data-editor-tool="select">Select</button><button class="tool-button" data-editor-tool="draw">Draw room</button><button class="tool-button" data-editor-tool="add-vertex">Add point</button><button class="tool-button" data-editor-tool="delete-vertex">Delete point</button><button class="tool-button" data-editor-tool="pan">Pan</button></div>
+        <div class="tool-group"><button class="tool-button is-active" data-editor-tool="select">Select</button><button class="tool-button" data-editor-tool="draw">Draw room</button><button class="tool-button" data-editor-tool="add-vertex">Add point</button><button class="tool-button" data-editor-tool="delete-vertex">Delete point</button><button class="tool-button" data-editor-tool="pan">Pan</button><button id="deleteSelectedShapeButton" class="tool-button" type="button" disabled>Remove selected</button></div>
         <div class="draft-controls"><input id="draftRoomLabel" placeholder="Room label" aria-label="New room label" /><button id="finishDraftButton" class="tool-button confirm" disabled>Finish</button><button id="cancelDraftButton" class="tool-button" disabled>Cancel</button></div>
         <div class="tool-group align-right"><button id="undoButton" class="tool-button">Undo</button><button id="redoButton" class="tool-button">Redo</button><button id="zoomOutButton" class="tool-button">−</button><span id="zoomOutput" class="zoom-output">100%</span><button id="zoomInButton" class="tool-button">+</button><button id="fitButton" class="tool-button">Fit</button></div>
       </div>
@@ -63,7 +65,8 @@
 
     <aside class="right-panel">
       <section class="panel-section inspector-section"><span class="section-kicker">4 · Final decision</span><h2>Room inspector</h2><div id="inspectorContent"></div></section>
-      <section class="panel-section guidance-section"><h3>Layered PDF test</h3><ol><li>Upload the original layered PDF.</li><li>Confirm the suggested area and room-name layers.</li><li>Optionally restrict the recognition area.</li><li>Run recognition.</li><li>Review every vector suggestion.</li><li>Edit or redraw incorrect boundaries.</li></ol><p class="privacy-note">Files stay in the browser. The original PDF must be re-uploaded after loading a saved JSON project before layer recognition can run again.</p></section>
+      <section class="panel-section guidance-section"><h3>Edit detected shapes</h3><p>Select a room polygon to show its orange points. Drag a point to correct the boundary, drag inside the polygon to move it, use <strong>Add point</strong> or <strong>Delete point</strong> for detailed changes, and use <strong>Remove selected</strong> when the detected area is not needed.</p></section>
+      <section class="panel-section guidance-section"><h3>Layered PDF test</h3><ol><li>Upload the original layered PDF.</li><li>Select only the layers you want to see and apply the layer view.</li><li>Draw the recognition area on the filtered drawing.</li><li>Confirm the area and room-name recognition layers.</li><li>Run recognition.</li><li>Edit, remove or redraw incorrect boundaries.</li></ol><p class="privacy-note">Files stay in the browser. The original PDF must be re-uploaded after loading a saved JSON project before layer recognition can run again.</p></section>
     </aside>
   </main>
   <script src="./app.js" defer></script>
