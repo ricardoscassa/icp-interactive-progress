@@ -1,17 +1,11 @@
 namespace ICPDrawingLab {
-  const PDF_MODULE_URL = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDF_JS_VERSION}/build/pdf.min.mjs`;
-  const PDF_WORKER_URL = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDF_JS_VERSION}/build/pdf.worker.min.mjs`;
-
-  let pdfModulePromise: Promise<PdfJsModule> | null = null;
-
-  async function getPdfModule(): Promise<PdfJsModule> {
-    if (!pdfModulePromise) {
-      pdfModulePromise = dynamicImport<PdfJsModule>(PDF_MODULE_URL).then((module) => {
-        module.GlobalWorkerOptions.workerSrc = PDF_WORKER_URL;
-        return module;
-      });
-    }
-    return pdfModulePromise;
+  interface PdfTextRun {
+    text: string;
+    box: BoundingBox;
+    confidence: number | null;
+    source: LabelSource;
+    fontHeight: number;
+    angle: number;
   }
 
   function pdfRenderScale(width: number, height: number): number {
@@ -19,18 +13,18 @@ namespace ICPDrawingLab {
     return Math.min(3, MAX_RENDER_EDGE / longestEdge);
   }
 
-  function textRunsFromPdf(
+  function rawTextRunsFromPdf(
     textContent: PdfTextContentLike,
     viewport: PdfViewportLike,
     pdfjs: PdfJsModule,
-  ): Array<{ text: string; box: BoundingBox; confidence: number | null; source: LabelSource }> {
-    const runs: Array<{ text: string; box: BoundingBox; confidence: number | null; source: LabelSource }> = [];
+  ): PdfTextRun[] {
+    const runs: PdfTextRun[] = [];
     for (const item of textContent.items ?? []) {
       const text = String(item.str ?? "").trim();
       const transform = item.transform;
       if (!text || !Array.isArray(transform) || transform.length < 6) continue;
       const transformed = pdfjs.Util.transform(viewport.transform, transform);
-      const fontHeight = Math.max(7, Math.abs(Number(item.height) || transformed[3] || 0));
+      const fontHeight = Math.max(7, Math.hypot(Number(transformed[2]) || 0, Number(transformed[3]) || 0));
       const width = Math.max(text.length * fontHeight * 0.42, Math.abs(Number(item.width) || 0));
       runs.push({
         text,
@@ -42,9 +36,60 @@ namespace ICPDrawingLab {
         },
         confidence: null,
         source: "pdf-text",
+        fontHeight,
+        angle: Math.atan2(Number(transformed[1]) || 0, Number(transformed[0]) || 1),
       });
     }
     return runs;
+  }
+
+  function combinedPdfTextRuns(runs: PdfTextRun[]): PdfTextRun[] {
+    const combined = runs.slice();
+    const nearest = runs.map((run) => runs
+      .filter((candidate) => candidate !== run)
+      .map((candidate) => {
+        const runCenter = { x: run.box.x + run.box.width / 2, y: run.box.y + run.box.height / 2 };
+        const candidateCenter = { x: candidate.box.x + candidate.box.width / 2, y: candidate.box.y + candidate.box.height / 2 };
+        return { candidate, distance: Math.hypot(candidateCenter.x - runCenter.x, candidateCenter.y - runCenter.y) };
+      })
+      .filter(({ candidate, distance }) => {
+        const scale = Math.max(run.fontHeight, candidate.fontHeight);
+        const angleDelta = Math.abs(run.angle - candidate.angle);
+        return distance <= scale * 8 && Math.min(angleDelta, Math.abs(Math.PI - angleDelta)) <= 0.3;
+      })
+      .sort((left, right) => left.distance - right.distance)
+      .slice(0, 3));
+
+    for (let index = 0; index < runs.length; index += 1) {
+      const run = runs[index];
+      for (const { candidate } of nearest[index]) {
+        const ordered = [run, candidate].sort((left, right) => {
+          const horizontal = Math.abs(Math.cos(run.angle)) >= Math.abs(Math.sin(run.angle));
+          return horizontal ? left.box.x - right.box.x : left.box.y - right.box.y;
+        });
+        const x = Math.min(...ordered.map((item) => item.box.x));
+        const y = Math.min(...ordered.map((item) => item.box.y));
+        const maximumX = Math.max(...ordered.map((item) => item.box.x + item.box.width));
+        const maximumY = Math.max(...ordered.map((item) => item.box.y + item.box.height));
+        combined.push({
+          text: ordered.map((item) => item.text).join(" "),
+          box: { x, y, width: maximumX - x, height: maximumY - y },
+          confidence: null,
+          source: "pdf-text",
+          fontHeight: Math.max(run.fontHeight, candidate.fontHeight),
+          angle: run.angle,
+        });
+      }
+    }
+    return combined;
+  }
+
+  function textRunsFromPdf(
+    textContent: PdfTextContentLike,
+    viewport: PdfViewportLike,
+    pdfjs: PdfJsModule,
+  ): Array<{ text: string; box: BoundingBox; confidence: number | null; source: LabelSource }> {
+    return combinedPdfTextRuns(rawTextRunsFromPdf(textContent, viewport, pdfjs));
   }
 
   export async function loadPdfFile(
@@ -53,10 +98,17 @@ namespace ICPDrawingLab {
     onProgress: (message: string) => void,
   ): Promise<DrawingPage[]> {
     const pdfjs = await getPdfModule();
-    const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+    const sourceData = await file.arrayBuffer();
+    const sourceKey = uid("pdf-source");
+    registerPdfSource(sourceKey, sourceData);
+    const pdf = await pdfjs.getDocument({ data: sourceData.slice(0) }).promise;
     const pages: DrawingPage[] = [];
     const baseName = file.name.replace(/\.[^.]+$/, "");
+    let layers: PdfLayerInfo[] = [];
     try {
+      const optionalContentConfig = await pdf.getOptionalContentConfig?.({ intent: "any" });
+      layers = pdfLayerInfos(optionalContentConfig ?? null);
+      const suggestedLayers = suggestPdfLayerSelections(layers);
       for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
         onProgress(`Rendering PDF page ${pageNumber} of ${pdf.numPages}…`);
         const page = await pdf.getPage(pageNumber);
@@ -73,7 +125,7 @@ namespace ICPDrawingLab {
 
         let labels: DetectedLabel[] = [];
         try {
-          const textContent = await page.getTextContent();
+          const textContent = await page.getTextContent({ includeMarkedContent: true });
           labels = labelsFromTextRuns(
             textRunsFromPdf(textContent, viewport, pdfjs),
             roomPattern,
@@ -94,6 +146,11 @@ namespace ICPDrawingLab {
           labels,
           rooms: [],
           analysisArea: null,
+          pdfSourceKey: sourceKey,
+          pdfPageNumber: pageNumber,
+          pdfLayers: layers,
+          selectedAreaLayerIds: suggestedLayers.areaLayerIds,
+          selectedLabelLayerIds: suggestedLayers.labelLayerIds,
         });
       }
     } finally {
@@ -159,6 +216,16 @@ namespace ICPDrawingLab {
     return runs;
   }
 
+  function nonPdfPageDefaults(): Pick<DrawingPage, "pdfSourceKey" | "pdfPageNumber" | "pdfLayers" | "selectedAreaLayerIds" | "selectedLabelLayerIds"> {
+    return {
+      pdfSourceKey: null,
+      pdfPageNumber: null,
+      pdfLayers: [],
+      selectedAreaLayerIds: [],
+      selectedLabelLayerIds: [],
+    };
+  }
+
   export async function loadImageFile(file: File, roomPattern: string): Promise<DrawingPage[]> {
     const isSvg = file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg");
     if (isSvg) {
@@ -172,14 +239,10 @@ namespace ICPDrawingLab {
         width: rasterized.width,
         height: rasterized.height,
         imageDataUrl: rasterized.dataUrl,
-        labels: labelsFromTextRuns(
-          svgTextRuns(sanitized, rasterized.width, rasterized.height),
-          roomPattern,
-          rasterized.width,
-          rasterized.height,
-        ),
+        labels: labelsFromTextRuns(svgTextRuns(sanitized, rasterized.width, rasterized.height), roomPattern, rasterized.width, rasterized.height),
         rooms: [],
         analysisArea: null,
+        ...nonPdfPageDefaults(),
       }];
     }
 
@@ -195,6 +258,7 @@ namespace ICPDrawingLab {
       labels: [],
       rooms: [],
       analysisArea: null,
+      ...nonPdfPageDefaults(),
     }];
   }
 
@@ -208,13 +272,9 @@ namespace ICPDrawingLab {
       const file = files[index];
       onProgress(`Loading ${index + 1} of ${files.length}: ${file.name}`);
       const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
-      if (isPdf) {
-        pages.push(...await loadPdfFile(file, roomPattern, onProgress));
-      } else if (file.type.startsWith("image/") || /\.(png|jpe?g|webp|svg)$/i.test(file.name)) {
-        pages.push(...await loadImageFile(file, roomPattern));
-      } else {
-        throw new Error(`Unsupported drawing type: ${file.name}`);
-      }
+      if (isPdf) pages.push(...await loadPdfFile(file, roomPattern, onProgress));
+      else if (file.type.startsWith("image/") || /\.(png|jpe?g|webp|svg)$/i.test(file.name)) pages.push(...await loadImageFile(file, roomPattern));
+      else throw new Error(`Unsupported drawing type: ${file.name}`);
     }
     return pages;
   }
@@ -233,14 +293,10 @@ namespace ICPDrawingLab {
       width: rasterized.width,
       height: rasterized.height,
       imageDataUrl: rasterized.dataUrl,
-      labels: labelsFromTextRuns(
-        svgTextRuns(sanitized, rasterized.width, rasterized.height),
-        roomPattern,
-        rasterized.width,
-        rasterized.height,
-      ),
+      labels: labelsFromTextRuns(svgTextRuns(sanitized, rasterized.width, rasterized.height), roomPattern, rasterized.width, rasterized.height),
       rooms: [],
       analysisArea: null,
+      ...nonPdfPageDefaults(),
     };
   }
 }
