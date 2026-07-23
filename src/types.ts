@@ -110,9 +110,9 @@ namespace ICPDrawingLab {
     createBoundarySuggestions: boolean;
     darkThreshold: number;
     usePdfLayers: boolean;
-    useColourRegions?: boolean;
-    colourTolerance?: number;
-    colourSaturationFloor?: number;
+    useColourRegions: boolean;
+    colourTolerance: number;
+    colourSaturationFloor: number;
   }
 
   export interface OcrProgress {
