@@ -86,6 +86,9 @@ namespace ICPDrawingLab {
         createBoundarySuggestions: this.boundariesInput.checked,
         darkThreshold: clamp(Number(this.darkThresholdInput.value) || 155, 50, 245),
         usePdfLayers: this.usePdfLayersInput.checked,
+        useColourRegions: true,
+        colourTolerance: 58,
+        colourSaturationFloor: 0.14,
       };
     }
 
@@ -193,11 +196,14 @@ namespace ICPDrawingLab {
         });
         this.store.commitTransaction(before);
         const areaMessage = page.analysisArea ? " inside the selected area" : "";
+        const colourMessage = summary.colourRegionsFound
+          ? ` ${summary.colourRegionsFound} coloured regions found, ${summary.colourRoomsSuggested} converted to room suggestions, and ${summary.unlabelledRegionsSuggested} left unassigned.`
+          : "";
         const vectorMessage = summary.vectorRegionsFound
           ? ` ${summary.vectorRegionsFound} vector regions traced and ${summary.vectorRoomsSuggested} linked to labels.`
           : "";
         setStatus(
-          `Recognition complete${areaMessage}: ${summary.labelsFound} labels and ${summary.roomsSuggested} room suggestions.${vectorMessage} ${summary.boundariesFailed} labels still need manual geometry.`,
+          `Recognition complete${areaMessage}: ${summary.labelsFound} labels and ${summary.roomsSuggested} room suggestions.${colourMessage}${vectorMessage} ${summary.boundariesFailed} labels still need manual geometry.`,
           summary.boundariesFailed ? "warning" : "success",
         );
       } catch (error) {
@@ -212,7 +218,7 @@ namespace ICPDrawingLab {
     private clearAutomaticSuggestions(): void {
       const page = this.store.activePage;
       if (!page) return;
-      const automaticCount = page.rooms.filter((room) => room.source === "automatic" || room.source === "pdf-vector").length;
+      const automaticCount = page.rooms.filter((room) => room.source !== "manual").length;
       if (!automaticCount) {
         setStatus("There are no automatic suggestions to clear.", "warning");
         return;
