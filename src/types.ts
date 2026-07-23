@@ -30,7 +30,7 @@ namespace ICPDrawingLab {
   }
 
   export type LabelSource = "pdf-text" | "svg-text" | "ocr" | "manual";
-  export type ShapeSource = "automatic" | "manual" | "pdf-vector";
+  export type ShapeSource = "automatic" | "manual" | "pdf-vector" | "colour-region";
   export type ReviewStatus = "unreviewed" | "accepted" | "rejected" | "manual" | "ignored";
   export type EditorTool = "select" | "draw" | "add-vertex" | "delete-vertex" | "pan" | "analysis-area";
 
@@ -110,6 +110,9 @@ namespace ICPDrawingLab {
     createBoundarySuggestions: boolean;
     darkThreshold: number;
     usePdfLayers: boolean;
+    useColourRegions: boolean;
+    colourTolerance: number;
+    colourSaturationFloor: number;
   }
 
   export interface OcrProgress {
@@ -125,6 +128,9 @@ namespace ICPDrawingLab {
     fuzzyMatches: number;
     vectorRegionsFound: number;
     vectorRoomsSuggested: number;
+    colourRegionsFound: number;
+    colourRoomsSuggested: number;
+    unlabelledRegionsSuggested: number;
   }
 
   export interface PdfTextItemLike {
