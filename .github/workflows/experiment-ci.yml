@@ -25,4 +25,19 @@ jobs:
       - name: Install dependencies
         run: npm install
       - name: Verify TypeScript, tests and build
-        run: npm run verify
+        id: verify
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run verify 2>&1 | tee verify.log
+      - name: Upload verification log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: adaptive-colour-verify-log
+          path: verify.log
+          if-no-files-found: error
+      - name: Fail when verification failed
+        if: steps.verify.outcome == 'failure'
+        run: exit 1
