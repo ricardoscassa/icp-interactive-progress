@@ -13,9 +13,13 @@ namespace ICPDrawingLab {
     private readonly darkThresholdInput = assertElement<HTMLInputElement>("#darkThreshold");
     private readonly usePdfLayersInput = assertElement<HTMLInputElement>("#usePdfLayers");
     private readonly pdfLayerSection = assertElement<HTMLElement>("#pdfLayerSection");
+    private readonly visibleLayerSelect = assertElement<HTMLSelectElement>("#visibleLayerSelect");
+    private readonly applyLayerPreviewButton = assertElement<HTMLButtonElement>("#applyLayerPreviewButton");
+    private readonly resetLayerPreviewButton = assertElement<HTMLButtonElement>("#resetLayerPreviewButton");
     private readonly areaLayerSelect = assertElement<HTMLSelectElement>("#areaLayerSelect");
     private readonly labelLayerSelect = assertElement<HTMLSelectElement>("#labelLayerSelect");
     private readonly pdfLayerSummary = assertElement<HTMLElement>("#pdfLayerSummary");
+    private readonly deleteSelectedShapeButton = assertElement<HTMLButtonElement>("#deleteSelectedShapeButton");
 
     constructor() {
       this.roomPatternInput.value = DEFAULT_ROOM_PATTERN;
@@ -42,9 +46,13 @@ namespace ICPDrawingLab {
       assertElement<HTMLButtonElement>("#loadProjectButton").addEventListener("click", () => this.projectInput.click());
       this.projectInput.addEventListener("change", () => void this.loadProject());
 
+      this.visibleLayerSelect.addEventListener("change", () => this.updateVisibleLayerSelection());
+      this.applyLayerPreviewButton.addEventListener("click", () => void this.applyVisibleLayerPreview());
+      this.resetLayerPreviewButton.addEventListener("click", () => void this.resetVisibleLayerPreview());
       this.areaLayerSelect.addEventListener("change", () => this.updateSelectedLayers("area"));
       this.labelLayerSelect.addEventListener("change", () => this.updateSelectedLayers("label"));
       this.usePdfLayersInput.addEventListener("change", () => this.renderPdfLayerControls());
+      this.deleteSelectedShapeButton.addEventListener("click", () => this.deleteSelectedShape());
 
       document.querySelectorAll<HTMLButtonElement>("[data-editor-tool]").forEach((button) => {
         button.addEventListener("click", () => {
@@ -70,6 +78,7 @@ namespace ICPDrawingLab {
       });
       this.store.subscribe(() => {
         if (document.activeElement !== this.projectName) this.projectName.value = this.store.project.name;
+        this.deleteSelectedShapeButton.disabled = !this.store.selectedRoom;
         this.renderPdfLayerControls();
       });
 
@@ -96,6 +105,18 @@ namespace ICPDrawingLab {
       return Array.from(select.selectedOptions).map((option) => option.value);
     }
 
+    private ensurePdfPreviewState(page: DrawingPage): void {
+      page.originalImageDataUrl ??= page.imageDataUrl;
+      page.selectedVisibleLayerIds ??= defaultVisiblePdfLayerIds(page);
+    }
+
+    private updateVisibleLayerSelection(): void {
+      const page = this.store.activePage;
+      if (!page || page.sourceType !== "pdf") return;
+      page.selectedVisibleLayerIds = this.selectedOptions(this.visibleLayerSelect);
+      this.store.notify();
+    }
+
     private updateSelectedLayers(kind: "area" | "label"): void {
       const page = this.store.activePage;
       if (!page || page.sourceType !== "pdf") return;
@@ -118,12 +139,105 @@ namespace ICPDrawingLab {
       const isLayeredPdf = page?.sourceType === "pdf" && page.pdfLayers.length > 0;
       this.pdfLayerSection.hidden = !isLayeredPdf;
       if (!page || !isLayeredPdf) return;
+      this.ensurePdfPreviewState(page);
+      this.renderLayerOptions(this.visibleLayerSelect, page.pdfLayers, page.selectedVisibleLayerIds ?? []);
       this.renderLayerOptions(this.areaLayerSelect, page.pdfLayers, page.selectedAreaLayerIds);
       this.renderLayerOptions(this.labelLayerSelect, page.pdfLayers, page.selectedLabelLayerIds);
       const sourceReady = hasRegisteredPdfSource(page.pdfSourceKey);
-      this.pdfLayerSummary.textContent = `${page.pdfLayers.length} layers detected · ${page.selectedAreaLayerIds.length} area · ${page.selectedLabelLayerIds.length} label${sourceReady ? "" : " · re-upload PDF required"}`;
+      const visibleCount = page.selectedVisibleLayerIds?.length ?? 0;
+      this.pdfLayerSummary.textContent = `${page.pdfLayers.length} layers detected · ${visibleCount} shown · ${page.selectedAreaLayerIds.length} area · ${page.selectedLabelLayerIds.length} label${sourceReady ? "" : " · re-upload PDF required"}`;
+      this.visibleLayerSelect.disabled = !sourceReady;
+      this.applyLayerPreviewButton.disabled = !sourceReady || visibleCount === 0;
+      this.resetLayerPreviewButton.disabled = !sourceReady || !page.originalImageDataUrl;
       this.areaLayerSelect.disabled = !this.usePdfLayersInput.checked || !sourceReady;
       this.labelLayerSelect.disabled = !this.usePdfLayersInput.checked || !sourceReady;
+    }
+
+    private removeAutomaticSuggestionsWithoutPrompt(page: DrawingPage): number {
+      const automaticRooms = page.rooms.filter((room) => room.source !== "manual");
+      if (!automaticRooms.length) return 0;
+      const removedIds = new Set(automaticRooms.map((room) => room.id));
+      page.rooms = page.rooms.filter((room) => room.source === "manual");
+      page.labels.forEach((label) => {
+        if (label.consumedByRoomId && removedIds.has(label.consumedByRoomId)) label.consumedByRoomId = null;
+      });
+      this.store.selectedRoomId = null;
+      return automaticRooms.length;
+    }
+
+    private async drawCurrentPageImage(page: DrawingPage): Promise<void> {
+      const image = await loadImage(page.imageDataUrl);
+      const canvas = assertElement<HTMLCanvasElement>("#drawingCanvas");
+      canvas.width = page.width;
+      canvas.height = page.height;
+      const context = canvas.getContext("2d", { alpha: false });
+      if (!context) throw new Error("Canvas is not supported by this browser.");
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, page.width, page.height);
+      context.drawImage(image, 0, 0, page.width, page.height);
+    }
+
+    private async applyVisibleLayerPreview(): Promise<void> {
+      const page = this.store.activePage;
+      if (!page || page.sourceType !== "pdf") return;
+      this.ensurePdfPreviewState(page);
+      const selectedLayerIds = this.selectedOptions(this.visibleLayerSelect);
+      if (!selectedLayerIds.length) {
+        setStatus("Select at least one layer to show in the drawing preview.", "warning");
+        return;
+      }
+      if (!hasRegisteredPdfSource(page.pdfSourceKey)) {
+        setStatus("Re-upload the original PDF before changing its visible layers.", "warning");
+        return;
+      }
+      this.setBusy(true);
+      setStatus(`Rendering ${selectedLayerIds.length} selected PDF layer${selectedLayerIds.length === 1 ? "" : "s"}…`);
+      try {
+        const dataUrl = await renderPdfLayerPreviewDataUrl(page, selectedLayerIds);
+        const before = this.store.startTransaction();
+        const removed = this.removeAutomaticSuggestionsWithoutPrompt(page);
+        page.selectedVisibleLayerIds = selectedLayerIds;
+        page.imageDataUrl = dataUrl;
+        this.store.commitTransaction(before);
+        await this.drawCurrentPageImage(page);
+        setStatus(
+          `Layer view applied. ${selectedLayerIds.length} layer${selectedLayerIds.length === 1 ? " is" : "s are"} visible${removed ? ` and ${removed} old automatic suggestion${removed === 1 ? " was" : "s were"} cleared` : ""}. Draw the recognition area on this filtered view.`,
+          "success",
+        );
+      } catch (error) {
+        console.error(error);
+        setStatus(error instanceof Error ? error.message : "The selected PDF layers could not be rendered.", "error");
+      } finally {
+        this.setBusy(false);
+      }
+    }
+
+    private async resetVisibleLayerPreview(): Promise<void> {
+      const page = this.store.activePage;
+      if (!page || page.sourceType !== "pdf") return;
+      this.ensurePdfPreviewState(page);
+      if (!page.originalImageDataUrl) return;
+      const before = this.store.startTransaction();
+      const removed = this.removeAutomaticSuggestionsWithoutPrompt(page);
+      page.selectedVisibleLayerIds = defaultVisiblePdfLayerIds(page);
+      page.imageDataUrl = page.originalImageDataUrl;
+      this.store.commitTransaction(before);
+      await this.drawCurrentPageImage(page);
+      setStatus(
+        `Full PDF drawing restored${removed ? ` and ${removed} old automatic suggestion${removed === 1 ? " was" : "s were"} cleared` : ""}.`,
+        "success",
+      );
+    }
+
+    private deleteSelectedShape(): void {
+      const room = this.store.selectedRoom;
+      if (!room) {
+        setStatus("Select a detected room shape first.", "warning");
+        return;
+      }
+      if (!confirm(`Remove the selected shape “${room.displayLabel}”?`)) return;
+      this.store.deleteSelectedRoom();
+      setStatus("Selected room shape removed.", "success");
     }
 
     private async handlePlanFiles(): Promise<void> {
@@ -139,7 +253,7 @@ namespace ICPDrawingLab {
         const layerCount = pages.reduce((maximum, page) => Math.max(maximum, page.pdfLayers.length), 0);
         setStatus(
           layerCount
-            ? `${pages.length} page${pages.length === 1 ? "" : "s"} loaded. ${layerCount} PDF layers detected; review the suggested area and label layers.`
+            ? `${pages.length} page${pages.length === 1 ? "" : "s"} loaded. ${layerCount} PDF layers detected; choose the visible preview layers before drawing the recognition area.`
             : `${pages.length} drawing page${pages.length === 1 ? "" : "s"} loaded.`,
           "success",
         );
@@ -225,12 +339,7 @@ namespace ICPDrawingLab {
       }
       if (!confirm(`Clear ${automaticCount} automatic room suggestion${automaticCount === 1 ? "" : "s"}? Manual rooms will remain.`)) return;
       const before = this.store.startTransaction();
-      const removedIds = new Set(page.rooms.filter((room) => room.source !== "manual").map((room) => room.id));
-      page.rooms = page.rooms.filter((room) => room.source === "manual");
-      page.labels.forEach((label) => {
-        if (label.consumedByRoomId && removedIds.has(label.consumedByRoomId)) label.consumedByRoomId = null;
-      });
-      this.store.selectedRoomId = null;
+      this.removeAutomaticSuggestionsWithoutPrompt(page);
       this.store.commitTransaction(before);
       setStatus("Automatic suggestions cleared.", "success");
     }
@@ -299,9 +408,16 @@ namespace ICPDrawingLab {
       assertElement<HTMLButtonElement>("#loadSampleButton").disabled = busy;
       assertElement<HTMLButtonElement>("#selectAnalysisAreaButton").disabled = busy;
       assertElement<HTMLButtonElement>("#clearAnalysisAreaButton").disabled = busy;
-      this.areaLayerSelect.disabled = busy || !this.usePdfLayersInput.checked;
-      this.labelLayerSelect.disabled = busy || !this.usePdfLayersInput.checked;
+      const page = this.store.activePage;
+      const sourceReady = Boolean(page && hasRegisteredPdfSource(page.pdfSourceKey));
+      this.visibleLayerSelect.disabled = busy || !sourceReady;
+      this.applyLayerPreviewButton.disabled = busy || !sourceReady || !(page?.selectedVisibleLayerIds?.length);
+      this.resetLayerPreviewButton.disabled = busy || !sourceReady || !page?.originalImageDataUrl;
+      this.areaLayerSelect.disabled = busy || !this.usePdfLayersInput.checked || !sourceReady;
+      this.labelLayerSelect.disabled = busy || !this.usePdfLayersInput.checked || !sourceReady;
+      this.deleteSelectedShapeButton.disabled = busy || !this.store.selectedRoom;
       document.body.classList.toggle("is-busy", busy);
+      if (!busy) this.renderPdfLayerControls();
     }
   }
 
