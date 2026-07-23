@@ -1,1 +1,0 @@
-Temporary branch marker for direct PDF.js 6 layer reader fix.
