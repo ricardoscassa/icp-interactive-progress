@@ -18,6 +18,7 @@
     "src/geometry.ts",
     "src/matching.ts",
     "src/pdf-layer-recognition.ts",
+    "src/colour-region-recognition.ts",
     "src/recognition.ts",
     "src/file-loader.ts",
     "src/store.ts",
