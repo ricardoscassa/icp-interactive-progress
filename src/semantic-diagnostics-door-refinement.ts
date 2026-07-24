@@ -65,7 +65,43 @@ namespace ICPDrawingLab {
     return evidence;
   }
 
-  function refineDoorMask(
+  function markDoorBand(
+    doors: Uint8Array,
+    width: number,
+    height: number,
+    orientation: "horizontal" | "vertical",
+    axis: number,
+    start: number,
+    end: number,
+  ): void {
+    if (orientation === "horizontal") {
+      for (let y = Math.max(0, axis - 2); y <= Math.min(height - 1, axis + 2); y += 1) {
+        for (let x = Math.max(0, start); x <= Math.min(width - 1, end); x += 1) doors[y * width + x] = 1;
+      }
+    } else {
+      for (let x = Math.max(0, axis - 2); x <= Math.min(width - 1, axis + 2); x += 1) {
+        for (let y = Math.max(0, start); y <= Math.min(height - 1, end); y += 1) doors[y * width + x] = 1;
+      }
+    }
+  }
+
+  function wallNear(
+    wall: Uint8Array,
+    width: number,
+    height: number,
+    x: number,
+    y: number,
+    radius = 2,
+  ): boolean {
+    for (let yy = Math.max(0, y - radius); yy <= Math.min(height - 1, y + radius); yy += 1) {
+      for (let xx = Math.max(0, x - radius); xx <= Math.min(width - 1, x + radius); xx += 1) {
+        if (wall[yy * width + xx]) return true;
+      }
+    }
+    return false;
+  }
+
+  function refineDoorMaskFromWallGaps(
     imageData: ImageData,
     wallMask: Uint8Array,
     threshold: number,
@@ -88,12 +124,9 @@ namespace ICPDrawingLab {
         const gap = right.start - left.end - 1;
         if (gap < minimumGap || gap > maximumGap) continue;
         const centreX = Math.round((left.end + right.start) / 2);
-        const radius = Math.max(6, Math.round(gap * 0.85));
-        const evidence = offAxisDarkEvidence(dark, width, height, centreX, y, radius, "horizontal");
+        const evidence = offAxisDarkEvidence(dark, width, height, centreX, y, Math.max(6, Math.round(gap * 0.85)), "horizontal");
         if (evidence < Math.max(5, Math.round(gap * 0.42))) continue;
-        for (let yy = Math.max(0, y - 2); yy <= Math.min(height - 1, y + 2); yy += 1) {
-          for (let x = left.end + 1; x < right.start; x += 1) doors[yy * width + x] = 1;
-        }
+        markDoorBand(doors, width, height, "horizontal", y, left.end + 1, right.start - 1);
       }
     }
 
@@ -105,11 +138,86 @@ namespace ICPDrawingLab {
         const gap = bottom.start - top.end - 1;
         if (gap < minimumGap || gap > maximumGap) continue;
         const centreY = Math.round((top.end + bottom.start) / 2);
-        const radius = Math.max(6, Math.round(gap * 0.85));
-        const evidence = offAxisDarkEvidence(dark, width, height, x, centreY, radius, "vertical");
+        const evidence = offAxisDarkEvidence(dark, width, height, x, centreY, Math.max(6, Math.round(gap * 0.85)), "vertical");
         if (evidence < Math.max(5, Math.round(gap * 0.42))) continue;
-        for (let xx = Math.max(0, x - 2); xx <= Math.min(width - 1, x + 2); xx += 1) {
-          for (let y = top.end + 1; y < bottom.start; y += 1) doors[y * width + xx] = 1;
+        markDoorBand(doors, width, height, "vertical", x, top.end + 1, bottom.start - 1);
+      }
+    }
+    return doors;
+  }
+
+  function polygonGapRuns(
+    wallMask: Uint8Array,
+    width: number,
+    height: number,
+    orientation: "horizontal" | "vertical",
+    axis: number,
+    start: number,
+    end: number,
+  ): DoorRefinementRun[] {
+    const runs: DoorRefinementRun[] = [];
+    let position = start;
+    const isOpen = (value: number): boolean => orientation === "horizontal"
+      ? !wallNear(wallMask, width, height, value, axis)
+      : !wallNear(wallMask, width, height, axis, value);
+    while (position <= end) {
+      while (position <= end && !isOpen(position)) position += 1;
+      if (position > end) break;
+      const gapStart = position;
+      while (position <= end && isOpen(position)) position += 1;
+      runs.push({ start: gapStart, end: position - 1 });
+    }
+    return runs;
+  }
+
+  function refineDoorMaskFromPolygonClosures(
+    imageData: ImageData,
+    wallMask: Uint8Array,
+    polygons: VectorRegion[],
+    threshold: number,
+    existing: Uint8Array,
+  ): Uint8Array {
+    const { width, height } = imageData;
+    const dark = refinementDarkMap(imageData, threshold);
+    const doors = existing.slice();
+    const longestEdge = Math.max(width, height);
+    const minimumGap = clamp(Math.round(longestEdge * 0.005), 4, 9);
+    const maximumGap = clamp(Math.round(longestEdge * 0.065), 18, 90);
+
+    for (const region of polygons) {
+      const points = region.points.map((point) => ({
+        x: Math.round(point.x * width),
+        y: Math.round(point.y * height),
+      }));
+      for (let index = 0; index < points.length; index += 1) {
+        const current = points[index];
+        const next = points[(index + 1) % points.length];
+        const dx = next.x - current.x;
+        const dy = next.y - current.y;
+        const horizontal = Math.abs(dx) >= Math.max(4, Math.abs(dy) * 4);
+        const vertical = Math.abs(dy) >= Math.max(4, Math.abs(dx) * 4);
+        if (!horizontal && !vertical) continue;
+        const orientation = horizontal ? "horizontal" : "vertical";
+        const axis = horizontal ? Math.round((current.y + next.y) / 2) : Math.round((current.x + next.x) / 2);
+        const start = horizontal ? Math.min(current.x, next.x) : Math.min(current.y, next.y);
+        const end = horizontal ? Math.max(current.x, next.x) : Math.max(current.y, next.y);
+        for (const gap of polygonGapRuns(wallMask, width, height, orientation, axis, start, end)) {
+          const length = gap.end - gap.start + 1;
+          if (length < minimumGap || length > maximumGap) continue;
+          const centre = Math.round((gap.start + gap.end) / 2);
+          const centreX = horizontal ? centre : axis;
+          const centreY = horizontal ? axis : centre;
+          const evidence = offAxisDarkEvidence(
+            dark,
+            width,
+            height,
+            centreX,
+            centreY,
+            Math.max(6, Math.round(length * 0.9)),
+            orientation,
+          );
+          if (evidence < Math.max(4, Math.round(length * 0.28))) continue;
+          markDoorBand(doors, width, height, orientation, axis, gap.start, gap.end);
         }
       }
     }
@@ -121,7 +229,9 @@ namespace ICPDrawingLab {
     options: SemanticDiagnosticOptions,
   ): SemanticDiagnosticResult {
     const result = analyseSemanticFloorplanBeforeDoorRefinement(imageData, options);
-    result.doorMask = refineDoorMask(imageData, result.wallMask, options.threshold, result.doorMask);
+    let doors = refineDoorMaskFromWallGaps(imageData, result.wallMask, options.threshold, result.doorMask);
+    doors = refineDoorMaskFromPolygonClosures(imageData, result.wallMask, result.polygons, options.threshold, doors);
+    result.doorMask = doors;
     result.doorPixelCount = result.doorMask.reduce((total, value) => total + value, 0);
     return result;
   }
