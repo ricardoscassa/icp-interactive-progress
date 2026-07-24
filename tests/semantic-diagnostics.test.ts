@@ -42,12 +42,12 @@ namespace ICPDrawingLab {
     horizontal(102, 7, 152);
     vertical(7, 7, 102);
     vertical(152, 7, 102);
-    vertical(80, 7, 40);
-    vertical(80, 67, 102);
-    line(80, 40, 58, 62);
+    vertical(80, 7, 45);
+    vertical(80, 56, 102);
+    line(80, 45, 69, 55);
     for (let degree = 0; degree <= 90; degree += 4) {
       const radians = degree * Math.PI / 180;
-      paint(Math.round(80 - Math.cos(radians) * 22), Math.round(40 + Math.sin(radians) * 22));
+      paint(Math.round(80 - Math.cos(radians) * 11), Math.round(45 + Math.sin(radians) * 11));
     }
     return { width, height, data } as ImageData;
   }
