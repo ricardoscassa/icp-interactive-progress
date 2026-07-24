@@ -115,10 +115,13 @@
 
 .layer-check-row {
   display: flex;
+  width: 100%;
+  min-width: 0;
   align-items: center;
   gap: 9px;
   min-height: 31px;
   padding: 5px 7px;
+  overflow: hidden;
   border-radius: 6px;
   color: #4f443d;
   font-size: 11px;
@@ -129,15 +132,28 @@
   background: var(--soft);
 }
 
-.layer-check-row input {
-  flex: 0 0 auto;
+.floating-layer-panel .layer-check-row input[type="checkbox"] {
+  -webkit-appearance: checkbox;
+  appearance: auto;
+  flex: 0 0 16px;
+  width: 16px !important;
+  min-width: 16px !important;
+  height: 16px !important;
   margin: 0;
+  padding: 0 !important;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none !important;
   accent-color: var(--accent);
 }
 
 .layer-check-row span {
+  display: block;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
+  color: #4f443d;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
