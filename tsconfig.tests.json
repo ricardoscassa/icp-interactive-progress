@@ -12,6 +12,8 @@
     "src/utils.ts",
     "src/geometry.ts",
     "src/matching.ts",
-    "tests/geometry.test.ts"
+    "src/monochrome-region-recognition.ts",
+    "tests/geometry.test.ts",
+    "tests/monochrome.test.ts"
   ]
 }
