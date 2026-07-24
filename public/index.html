@@ -55,11 +55,27 @@
     <section class="workspace">
       <div class="page-tabs-bar"><div id="pageTabs" class="page-tabs"></div></div>
       <div class="toolbar" role="toolbar" aria-label="Drawing editor tools">
-        <div class="tool-group"><button class="tool-button is-active" data-editor-tool="select">Select</button><button class="tool-button" data-editor-tool="draw">Draw room</button><button class="tool-button" data-editor-tool="add-vertex">Add point</button><button class="tool-button" data-editor-tool="delete-vertex">Delete point</button><button class="tool-button" data-editor-tool="pan">Pan</button><button id="deleteSelectedShapeButton" class="tool-button" type="button" disabled>Remove selected</button></div>
+        <div class="tool-group"><button class="tool-button is-active" data-editor-tool="select">Select</button><button class="tool-button" data-editor-tool="draw">Draw room</button><button class="tool-button" data-editor-tool="add-vertex">Add point</button><button class="tool-button" data-editor-tool="delete-vertex">Delete point</button><button class="tool-button" data-editor-tool="pan">Pan</button><button id="deleteSelectedShapeButton" class="tool-button" type="button" disabled>Remove selected</button><button id="semanticDiagnosticsButton" class="tool-button" type="button" aria-pressed="false">Diagnostics</button></div>
         <div class="draft-controls"><input id="draftRoomLabel" placeholder="Room label" aria-label="New room label" /><button id="finishDraftButton" class="tool-button confirm" disabled>Finish</button><button id="cancelDraftButton" class="tool-button" disabled>Cancel</button></div>
         <div class="tool-group align-right"><button id="undoButton" class="tool-button">Undo</button><button id="redoButton" class="tool-button">Redo</button><button id="zoomOutButton" class="tool-button">−</button><span id="zoomOutput" class="zoom-output">100%</span><button id="zoomInButton" class="tool-button">+</button><button id="fitButton" class="tool-button">Fit</button></div>
       </div>
-      <div id="stageViewport" class="stage-viewport"><div id="emptyStage" class="empty-stage"><div class="empty-illustration" aria-hidden="true"></div><h2>Upload a drawing</h2><p>Room labels and polygons will appear here.</p></div><div id="stageSurface" class="stage-surface" hidden><canvas id="drawingCanvas"></canvas><svg id="drawingOverlay" xmlns="http://www.w3.org/2000/svg" aria-label="Room geometry overlay"></svg></div></div>
+      <div id="stageViewport" class="stage-viewport">
+        <div id="emptyStage" class="empty-stage"><div class="empty-illustration" aria-hidden="true"></div><h2>Upload a drawing</h2><p>Room labels and polygons will appear here.</p></div>
+        <div id="semanticDiagnosticsPanel" class="semantic-diagnostics-panel" hidden>
+          <div class="semantic-diagnostics-heading"><div><span class="section-kicker">Monochrome analysis</span><strong>Recognition diagnostics</strong></div><button id="closeSemanticDiagnosticsButton" class="panel-close-button" type="button" aria-label="Close diagnostics">×</button></div>
+          <p>Inspect what the current browser recogniser believes is structural geometry before changing its room rules.</p>
+          <div class="semantic-diagnostic-layers">
+            <label><input type="checkbox" data-semantic-diagnostic-layer="rooms" /> <span><i class="legend-swatch room-swatch"></i>Room interior</span></label>
+            <label><input type="checkbox" data-semantic-diagnostic-layer="walls" checked /> <span><i class="legend-swatch wall-swatch"></i>Walls</span></label>
+            <label><input type="checkbox" data-semantic-diagnostic-layer="doors" checked /> <span><i class="legend-swatch door-swatch"></i>Door/opening evidence</span></label>
+            <label><input type="checkbox" data-semantic-diagnostic-layer="junctions" checked /> <span><i class="legend-swatch junction-swatch"></i>Junctions</span></label>
+            <label><input type="checkbox" data-semantic-diagnostic-layer="polygons" checked /> <span><i class="legend-swatch polygon-swatch"></i>Final candidate polygons</span></label>
+          </div>
+          <div class="semantic-diagnostic-actions"><button id="runSemanticDiagnosticsButton" class="button primary" type="button">Run diagnostics</button><button id="clearSemanticDiagnosticsButton" class="button" type="button">Clear</button></div>
+          <div id="semanticDiagnosticsSummary" class="semantic-diagnostics-summary"></div>
+        </div>
+        <div id="stageSurface" class="stage-surface" hidden><canvas id="drawingCanvas"></canvas><canvas id="semanticDiagnosticCanvas" hidden></canvas><svg id="drawingOverlay" xmlns="http://www.w3.org/2000/svg" aria-label="Room geometry overlay"></svg></div>
+      </div>
       <footer class="status-bar"><span id="statusMessage" data-tone="normal">Preparing sample drawing…</span><span class="shortcut-hint">V select · D draw · A add · X delete · H pan · R area · wheel zoom</span></footer>
     </section>
 
