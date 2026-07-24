@@ -77,6 +77,21 @@ namespace ICPDrawingLab {
       if (open) userClosed = false;
     };
 
+    const visibleSuffixPattern = /\s*·\s*visible\s*$/i;
+    const optionDisplayName = (option: HTMLOptionElement): string => {
+      const candidates = [
+        option.dataset.layerName,
+        option.label,
+        option.text,
+        option.textContent,
+        option.getAttribute("aria-label"),
+        option.title,
+        option.value,
+      ];
+      const resolved = candidates.find((candidate) => candidate?.trim())?.trim() ?? "Unnamed layer";
+      return resolved.replace(visibleSuffixPattern, "").trim() || option.value || "Unnamed layer";
+    };
+
     const syncChecklist = (): void => {
       const options = Array.from(visibleSelect.options);
       checklist.replaceChildren(...options.map((option) => {
@@ -90,8 +105,11 @@ namespace ICPDrawingLab {
           option.selected = checkbox.checked;
           visibleSelect.dispatchEvent(new Event("change", { bubbles: true }));
         });
+        const displayName = optionDisplayName(option);
         const name = document.createElement("span");
-        name.textContent = option.textContent?.replace(/ · visible$/, "") ?? option.value;
+        name.textContent = displayName;
+        name.title = displayName;
+        row.setAttribute("aria-label", displayName);
         row.append(checkbox, name);
         return row;
       }));
@@ -130,6 +148,7 @@ namespace ICPDrawingLab {
       attributes: true,
       attributeFilter: ["disabled"],
       childList: true,
+      characterData: true,
       subtree: true,
     });
 
