@@ -4,6 +4,10 @@ namespace ICPDrawingLab {
   const pdfSourceRegistry = new Map<string, Uint8Array>();
   let pdfModulePromise: Promise<PdfJsModule> | null = null;
 
+  interface PdfOptionalContentConfigIterableLike extends PdfOptionalContentConfigLike {
+    [Symbol.iterator]?: () => IterableIterator<[string, PdfOptionalContentGroupLike]>;
+  }
+
   export async function getPdfModule(): Promise<PdfJsModule> {
     if (!pdfModulePromise) {
       pdfModulePromise = dynamicImport<PdfJsModule>(PDF_MODULE_URL).then((module) => {
@@ -29,9 +33,18 @@ namespace ICPDrawingLab {
     return source.slice().buffer;
   }
 
+  function pdfLayerEntries(config: PdfOptionalContentConfigLike | null): Array<[string, PdfOptionalContentGroupLike]> {
+    if (!config) return [];
+    const legacyGroups = config.getGroups?.();
+    if (legacyGroups) return Object.entries(legacyGroups);
+    const iterable = config as PdfOptionalContentConfigIterableLike;
+    return typeof iterable[Symbol.iterator] === "function"
+      ? Array.from(iterable as Iterable<[string, PdfOptionalContentGroupLike]>)
+      : [];
+  }
+
   export function pdfLayerInfos(config: PdfOptionalContentConfigLike | null): PdfLayerInfo[] {
-    const groups = config?.getGroups?.() ?? {};
-    return Object.entries(groups).map(([id, group]) => ({
+    return pdfLayerEntries(config).map(([id, group]) => ({
       id,
       name: String(group?.name ?? id),
       visibleByDefault: group?.visible !== false,
@@ -76,9 +89,8 @@ namespace ICPDrawingLab {
   }
 
   function configureSelectedLayers(config: PdfOptionalContentConfigLike, selectedLayerIds: string[]): void {
-    const groups = config.getGroups?.() ?? {};
     const selected = new Set(selectedLayerIds);
-    for (const id of Object.keys(groups)) {
+    for (const [id] of pdfLayerEntries(config)) {
       config.setVisibility?.(id, selected.has(id), false);
     }
   }
@@ -105,15 +117,17 @@ namespace ICPDrawingLab {
       const context = canvas.getContext("2d", { alpha: true, willReadFrequently: true });
       if (!context) throw new Error("Canvas is not supported by this browser.");
       context.clearRect(0, 0, canvas.width, canvas.height);
-      const config = await pdf.getOptionalContentConfig?.({ intent: "any" });
+      const renderIntent = "display";
+      const config = await pdf.getOptionalContentConfig?.({ intent: renderIntent });
       if (!config) throw new Error("This PDF does not expose an optional-content layer configuration.");
       configureSelectedLayers(config, selectedLayerIds);
       await page.render({
         canvasContext: context,
         viewport,
         background,
+        intent: renderIntent,
         optionalContentConfigPromise: Promise.resolve(config),
-      }).promise;
+      } as Parameters<PdfPageLike["render"]>[0] & { intent: string }).promise;
       return canvas;
     } finally {
       if (typeof pdf.destroy === "function") await pdf.destroy();
