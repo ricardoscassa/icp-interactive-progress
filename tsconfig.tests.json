@@ -13,7 +13,9 @@
     "src/geometry.ts",
     "src/matching.ts",
     "src/monochrome-region-recognition.ts",
+    "src/monochrome-room-quality.ts",
     "tests/geometry.test.ts",
-    "tests/monochrome.test.ts"
+    "tests/monochrome.test.ts",
+    "tests/monochrome-quality.test.ts"
   ]
 }
