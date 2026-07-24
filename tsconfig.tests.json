@@ -14,10 +14,12 @@
     "src/matching.ts",
     "src/monochrome-region-recognition.ts",
     "src/structural-wall-recognition.ts",
+    "src/door-aware-structural-recognition.ts",
     "src/monochrome-room-quality.ts",
     "tests/geometry.test.ts",
     "tests/monochrome.test.ts",
     "tests/structural-wall.test.ts",
+    "tests/door-aware-structural.test.ts",
     "tests/monochrome-quality.test.ts"
   ]
 }
