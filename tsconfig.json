@@ -27,6 +27,7 @@
     "src/store.ts",
     "src/renderer.ts",
     "src/app.ts",
-    "src/stage-interaction.ts"
+    "src/stage-interaction.ts",
+    "src/floating-layer-panel.ts"
   ]
 }

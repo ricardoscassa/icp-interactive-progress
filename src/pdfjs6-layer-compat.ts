@@ -3,13 +3,14 @@ namespace ICPDrawingLab {
     [Symbol.iterator]?: () => IterableIterator<[string, PdfOptionalContentGroupLike]>;
   }
 
-  interface PdfPageRenderPrototypeLike extends PdfPageLike {
+  interface PdfDocumentProxyPrototypeLike {
     __icpLayerIntentPatched?: boolean;
+    getOptionalContentConfig(options?: { intent?: string }): Promise<PdfOptionalContentConfigLike>;
   }
 
-  interface PdfJsModuleWithPageProxy extends PdfJsModule {
-    PDFPageProxy?: {
-      prototype: PdfPageRenderPrototypeLike;
+  interface PdfJsModuleWithDocumentProxy extends PdfJsModule {
+    PDFDocumentProxy?: {
+      prototype: PdfDocumentProxyPrototypeLike;
     };
   }
 
@@ -57,25 +58,26 @@ namespace ICPDrawingLab {
     globalNamespace.pdfLayerInfos = (config) => originalPdfLayerInfos(installLayerEnumeration(config));
   }
 
-  async function patchPdfPageRenderIntent(): Promise<void> {
-    const moduleValue = await getPdfModule() as PdfJsModuleWithPageProxy;
-    const prototype = moduleValue.PDFPageProxy?.prototype;
+  async function patchPdfDocumentLayerIntent(): Promise<void> {
+    const moduleValue = await getPdfModule() as PdfJsModuleWithDocumentProxy;
+    const prototype = moduleValue.PDFDocumentProxy?.prototype;
     if (!prototype || prototype.__icpLayerIntentPatched) return;
 
-    const originalRender = prototype.render;
-    prototype.render = function (
-      this: PdfPageLike,
-      options: Parameters<PdfPageLike["render"]>[0] & { intent?: string },
-    ): ReturnType<PdfPageLike["render"]> {
-      const compatibleOptions = options.optionalContentConfigPromise && !options.intent
-        ? { ...options, intent: "any" }
+    const originalGetOptionalContentConfig = prototype.getOptionalContentConfig;
+    prototype.getOptionalContentConfig = function (
+      this: PdfDocumentProxyPrototypeLike,
+      options: { intent?: string } = {},
+    ): Promise<PdfOptionalContentConfigLike> {
+      const compatibleOptions = options.intent === "any"
+        ? { ...options, intent: "display" }
         : options;
-      return originalRender.call(this, compatibleOptions);
-    } as PdfPageLike["render"];
+      return originalGetOptionalContentConfig.call(this, compatibleOptions)
+        .then((config) => installLayerEnumeration(config) ?? config);
+    };
     prototype.__icpLayerIntentPatched = true;
   }
 
-  void patchPdfPageRenderIntent().catch((error) => {
-    console.warn("Could not patch the PDF.js layer render intent.", error);
+  void patchPdfDocumentLayerIntent().catch((error) => {
+    console.warn("Could not align the PDF.js optional-content render intent.", error);
   });
 }
