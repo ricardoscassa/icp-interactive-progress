@@ -13,9 +13,12 @@
     "src/geometry.ts",
     "src/matching.ts",
     "src/monochrome-region-recognition.ts",
+    "src/semantic-diagnostics.ts",
+    "src/semantic-diagnostics-door-refinement.ts",
     "src/monochrome-room-quality.ts",
     "tests/geometry.test.ts",
     "tests/monochrome.test.ts",
+    "tests/semantic-diagnostics.test.ts",
     "tests/monochrome-quality.test.ts"
   ]
 }
