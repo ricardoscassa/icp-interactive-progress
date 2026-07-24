@@ -34,8 +34,8 @@ namespace ICPDrawingLab {
     const summary = await analysePageBeforeMonochromeSequence(page, settings, onProgress);
     if (!settings.createBoundarySuggestions || summary.colourRegionsFound > 0) return summary;
 
-    onProgress("Reconstructing complete monochrome room polygons…", 0.9);
-    const regions = await detectMonochromeRegions(page, settings.darkThreshold);
+    onProgress("Separating structural walls from doors and drawing symbols…", 0.88);
+    const regions = await detectStructuralRoomRegions(page, settings.darkThreshold);
     if (!regions.length) return summary;
 
     const usedRegionIds = new Set<string>();
@@ -90,7 +90,7 @@ namespace ICPDrawingLab {
     summary.unlabelledRegionsSuggested += unassignedRooms;
     summary.boundariesFailed = Math.max(0, summary.boundariesFailed - addedRooms + unassignedRooms);
     onProgress(
-      `Monochrome reconstruction found ${regions.length} enclosed spaces, repaired ${repairedRooms} boundaries and added ${addedRooms} suggestions.`,
+      `Structural reconstruction found ${regions.length} room spaces, repaired ${repairedRooms} boundaries and added ${addedRooms} suggestions without door cut-outs.`,
       0.99,
     );
     return summary;
