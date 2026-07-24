@@ -24,6 +24,7 @@
     "src/colour-region-recognition.ts",
     "src/monochrome-region-recognition.ts",
     "src/semantic-diagnostics.ts",
+    "src/semantic-diagnostics-door-refinement.ts",
     "src/monochrome-room-quality.ts",
     "src/recognition.ts",
     "src/monochrome-recognition-integration.ts",
