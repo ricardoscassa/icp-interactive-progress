@@ -53,7 +53,7 @@ namespace ICPDrawingLab {
       const existing = page.rooms.find((room) => room.detectedLabelId === label.id)
         ?? page.rooms.find((room) => normalizeRoomCode(room.displayLabel) === normalizeRoomCode(label.roomCode));
       if (existing) {
-        if (existing.source === "automatic") {
+        if (existing.source === "automatic" && existing.reviewStatus === "unreviewed") {
           existing.points = region.points;
           existing.detectionConfidence = region.confidence;
           existing.detectedLabelId = label.id;
