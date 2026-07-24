@@ -1,4 +1,3 @@
-declare const process: { exitCode?: number };
 namespace ICPDrawingLab {
   function monoAssert(condition: unknown, message: string): asserts condition {
     if (!condition) throw new Error(message);
