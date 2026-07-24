@@ -83,14 +83,33 @@
   color: white;
 }
 
-.floating-layer-panel #visibleLayerSelect {
-  display: none;
+.floating-layer-panel #visibleLayerSelect,
+.floating-layer-panel .layer-source-field {
+  display: none !important;
+}
+
+.layer-visible-control {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.layer-visible-title {
+  color: #5f524a;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.layer-visible-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
 }
 
 .layer-bulk-actions {
   display: flex;
   gap: 7px;
-  margin-bottom: 8px;
 }
 
 .layer-bulk-actions button {
@@ -114,9 +133,11 @@
 }
 
 .layer-check-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
   gap: 9px;
+  width: 100%;
   min-height: 31px;
   padding: 5px 7px;
   border-radius: 6px;
@@ -129,15 +150,27 @@
   background: var(--soft);
 }
 
-.layer-check-row input {
-  flex: 0 0 auto;
+.layer-check-row input[type="checkbox"] {
+  appearance: auto;
+  -webkit-appearance: checkbox;
+  width: 16px !important;
+  min-width: 16px !important;
+  height: 16px;
   margin: 0;
+  padding: 0 !important;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  justify-self: start;
   accent-color: var(--accent);
 }
 
 .layer-check-row span {
+  display: block;
   min-width: 0;
+  width: auto;
   overflow: hidden;
+  color: #4f443d;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

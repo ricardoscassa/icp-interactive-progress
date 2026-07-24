@@ -48,9 +48,29 @@ namespace ICPDrawingLab {
       <button type="button" data-layer-action="none">Hide all</button>
     `;
 
+    const visibleControl = document.createElement("section");
+    visibleControl.className = "layer-visible-control";
+
+    const visibleTitle = document.createElement("div");
+    visibleTitle.className = "layer-visible-title";
+    visibleTitle.textContent = visibleField?.querySelector<HTMLElement>(":scope > span")?.textContent?.trim()
+      || "Visible layers in the drawing";
+
+    visibleControl.append(visibleTitle, bulkActions, checklist);
+
+    const originalHelp = visibleField?.querySelector<HTMLElement>(":scope > small");
+    if (originalHelp?.textContent?.trim()) {
+      const visibleHelp = document.createElement("p");
+      visibleHelp.className = "layer-visible-help";
+      visibleHelp.textContent = originalHelp.textContent.trim();
+      visibleControl.append(visibleHelp);
+    }
+
     if (visibleField) {
-      visibleField.insertBefore(bulkActions, visibleSelect);
-      visibleField.insertBefore(checklist, visibleSelect);
+      panel.insertBefore(visibleControl, visibleField);
+      visibleField.classList.add("layer-source-field");
+    } else {
+      panel.append(visibleControl);
     }
 
     const advanced = document.createElement("details");
@@ -94,11 +114,12 @@ namespace ICPDrawingLab {
 
     const syncChecklist = (): void => {
       const options = Array.from(visibleSelect.options);
-      checklist.replaceChildren(...options.map((option) => {
+      checklist.replaceChildren(...options.map((option, index) => {
         const row = document.createElement("label");
         row.className = "layer-check-row";
         const checkbox = document.createElement("input");
         checkbox.type = "checkbox";
+        checkbox.id = `pdf-layer-checkbox-${index}`;
         checkbox.checked = option.selected;
         checkbox.disabled = visibleSelect.disabled;
         checkbox.addEventListener("change", () => {
@@ -109,6 +130,7 @@ namespace ICPDrawingLab {
         const name = document.createElement("span");
         name.textContent = displayName;
         name.title = displayName;
+        row.htmlFor = checkbox.id;
         row.setAttribute("aria-label", displayName);
         row.append(checkbox, name);
         return row;
