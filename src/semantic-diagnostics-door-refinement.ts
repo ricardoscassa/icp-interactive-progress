@@ -78,15 +78,15 @@ namespace ICPDrawingLab {
     const minimumGap = clamp(Math.round(longestEdge * 0.006), 4, 10);
     const maximumGap = clamp(Math.round(longestEdge * 0.055), 16, 78);
     const minimumWallRun = clamp(Math.round(longestEdge * 0.015), 8, 28);
+    const strongRun = (run: DoorRefinementRun): boolean => run.end - run.start + 1 >= minimumWallRun;
 
     for (let y = 0; y < height; y += 2) {
-      const runs = refinementRowRuns(wallMask, width, y);
+      const runs = refinementRowRuns(wallMask, width, y).filter(strongRun);
       for (let index = 0; index < runs.length - 1; index += 1) {
         const left = runs[index];
         const right = runs[index + 1];
         const gap = right.start - left.end - 1;
         if (gap < minimumGap || gap > maximumGap) continue;
-        if (left.end - left.start + 1 < minimumWallRun || right.end - right.start + 1 < minimumWallRun) continue;
         const centreX = Math.round((left.end + right.start) / 2);
         const radius = Math.max(6, Math.round(gap * 0.85));
         const evidence = offAxisDarkEvidence(dark, width, height, centreX, y, radius, "horizontal");
@@ -98,13 +98,12 @@ namespace ICPDrawingLab {
     }
 
     for (let x = 0; x < width; x += 2) {
-      const runs = refinementColumnRuns(wallMask, width, height, x);
+      const runs = refinementColumnRuns(wallMask, width, height, x).filter(strongRun);
       for (let index = 0; index < runs.length - 1; index += 1) {
         const top = runs[index];
         const bottom = runs[index + 1];
         const gap = bottom.start - top.end - 1;
         if (gap < minimumGap || gap > maximumGap) continue;
-        if (top.end - top.start + 1 < minimumWallRun || bottom.end - bottom.start + 1 < minimumWallRun) continue;
         const centreY = Math.round((top.end + bottom.start) / 2);
         const radius = Math.max(6, Math.round(gap * 0.85));
         const evidence = offAxisDarkEvidence(dark, width, height, x, centreY, radius, "vertical");
