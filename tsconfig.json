@@ -24,6 +24,7 @@
     "src/colour-region-recognition.ts",
     "src/monochrome-region-recognition.ts",
     "src/structural-wall-recognition.ts",
+    "src/door-aware-structural-recognition.ts",
     "src/monochrome-room-quality.ts",
     "src/recognition.ts",
     "src/monochrome-recognition-integration.ts",
