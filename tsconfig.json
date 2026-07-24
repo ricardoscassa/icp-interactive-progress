@@ -23,6 +23,7 @@
     "src/pdf-layer-preview.ts",
     "src/colour-region-recognition.ts",
     "src/monochrome-region-recognition.ts",
+    "src/semantic-diagnostics.ts",
     "src/monochrome-room-quality.ts",
     "src/recognition.ts",
     "src/monochrome-recognition-integration.ts",
@@ -33,6 +34,8 @@
     "src/renderer.ts",
     "src/app.ts",
     "src/stage-interaction.ts",
-    "src/floating-layer-panel.ts"
+    "src/floating-layer-panel.ts",
+    "src/semantic-diagnostics-style.ts",
+    "src/semantic-diagnostics-ui.ts"
   ]
 }
